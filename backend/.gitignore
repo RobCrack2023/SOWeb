@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+soweb.db
+app/storage/*
+!app/storage/.gitkeep

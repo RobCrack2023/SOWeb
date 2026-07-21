@@ -1,0 +1,159 @@
+.explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-size: 13px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+  flex: 0 0 auto;
+}
+
+.toolbar button {
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f7f7f7;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: #eee;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid #eee;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.crumbGroup {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sep {
+  margin: 0 4px;
+  color: #999;
+}
+
+.crumb {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #2f6fed;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.crumb:hover {
+  text-decoration: underline;
+}
+
+.crumbDragOver {
+  background: rgba(47, 111, 237, 0.15);
+  border-radius: 4px;
+  text-decoration: underline;
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.item:hover {
+  background: #f0f4ff;
+}
+
+.itemDragOver {
+  background: rgba(47, 111, 237, 0.25);
+  outline: 1px dashed #2f6fed;
+  outline-offset: -1px;
+}
+
+.itemIcon {
+  font-size: 18px;
+}
+
+.itemName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemNameInput {
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  border: 1px solid #2f6fed;
+  border-radius: 3px;
+  padding: 1px 4px;
+  outline: none;
+  background: #fff;
+}
+
+.itemMeta {
+  color: #888;
+  font-size: 11px;
+  min-width: 60px;
+  text-align: right;
+}
+
+.deleteBtn {
+  border: none;
+  background: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px;
+  visibility: hidden;
+}
+
+.item:hover .deleteBtn {
+  visibility: visible;
+}
+
+.deleteBtn:hover {
+  color: #e5484d;
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: #888;
+}
+
+.loading,
+.error {
+  padding: 24px;
+  text-align: center;
+}
+
+.error {
+  color: #e5484d;
+}

@@ -1,0 +1,16 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Backend
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/soweb.db
+backend/app/storage/*
+!backend/app/storage/.gitkeep
+
+# Editor/OS
+.vscode/
+.idea/
+Thumbs.db
