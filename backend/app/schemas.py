@@ -40,6 +40,24 @@ class FileRename(BaseModel):
     folder_id: int | None = None
 
 
+class FileCreate(BaseModel):
+    name: str
+    folder_id: int
+    content: str = ""
+    content_type: str = "application/x-soweb-document"
+
+
+class FileContentOut(BaseModel):
+    id: int
+    name: str
+    content_type: str | None
+    content: str
+
+
+class FileContentUpdate(BaseModel):
+    content: str
+
+
 class FolderContents(BaseModel):
     folder: FolderOut | None
     breadcrumb: list[FolderOut]

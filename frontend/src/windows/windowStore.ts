@@ -20,6 +20,7 @@ interface OpenOptions {
   width?: number;
   height?: number;
   props?: Record<string, unknown>;
+  multiInstance?: boolean;
 }
 
 interface WindowStoreState {
@@ -32,6 +33,7 @@ interface WindowStoreState {
   minimizeWindow: (id: string) => void;
   restoreWindow: (id: string) => void;
   toggleMaximize: (id: string) => void;
+  setTitle: (id: string, title: string) => void;
 }
 
 let counter = 0;
@@ -41,7 +43,22 @@ export const useWindowStore = create<WindowStoreState>((set, get) => ({
   windows: [],
   nextZIndex: 1,
 
-  openApp: (appId, { title, width = 720, height = 480, props }) => {
+  openApp: (appId, { title, width = 720, height = 480, props, multiInstance }) => {
+    if (multiInstance) {
+      const id = `${appId}-${Date.now()}`;
+      const offset = cascadeOffset();
+      counter += 1;
+      const zIndex = get().nextZIndex;
+      set((state) => ({
+        windows: [
+          ...state.windows,
+          { id, appId, title, x: 80 + offset, y: 60 + offset, width, height, zIndex, minimized: false, maximized: false, props },
+        ],
+        nextZIndex: zIndex + 1,
+      }));
+      return id;
+    }
+
     const existing = get().windows.find((w) => w.appId === appId && !w.minimized);
     if (existing) {
       if (props) {
@@ -115,6 +132,12 @@ export const useWindowStore = create<WindowStoreState>((set, get) => ({
 
   restoreWindow: (id) => {
     get().focusWindow(id);
+  },
+
+  setTitle: (id, title) => {
+    set((state) => ({
+      windows: state.windows.map((w) => (w.id === id ? { ...w, title } : w)),
+    }));
   },
 
   toggleMaximize: (id) => {

@@ -14,6 +14,9 @@ from ..schemas import (
     FolderOut,
     FileOut,
     FileRename,
+    FileCreate,
+    FileContentOut,
+    FileContentUpdate,
     FolderContents,
 )
 
@@ -126,6 +129,53 @@ def delete_folder(folder_id: int, db: Session = Depends(get_db)):
         blob.unlink(missing_ok=True)
     db.delete(folder)
     db.commit()
+
+
+@router.post("/files", response_model=FileOut)
+def create_text_file(payload: FileCreate, db: Session = Depends(get_db)):
+    _get_folder_or_404(db, payload.folder_id)
+
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}_{payload.name}"
+    dest = STORAGE_DIR / stored_name
+    data = payload.content.encode("utf-8")
+    dest.write_bytes(data)
+
+    entry = FileEntry(
+        name=payload.name,
+        folder_id=payload.folder_id,
+        size=len(data),
+        content_type=payload.content_type,
+        storage_path=stored_name,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
+@router.get("/files/{file_id}/content", response_model=FileContentOut)
+def get_file_content(file_id: int, db: Session = Depends(get_db)):
+    entry = db.get(FileEntry, file_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    blob = STORAGE_DIR / entry.storage_path
+    text = blob.read_text(encoding="utf-8") if blob.exists() else ""
+    return FileContentOut(id=entry.id, name=entry.name, content_type=entry.content_type, content=text)
+
+
+@router.put("/files/{file_id}/content", response_model=FileOut)
+def update_file_content(file_id: int, payload: FileContentUpdate, db: Session = Depends(get_db)):
+    entry = db.get(FileEntry, file_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    blob = STORAGE_DIR / entry.storage_path
+    data = payload.content.encode("utf-8")
+    blob.write_bytes(data)
+    entry.size = len(data)
+    db.commit()
+    db.refresh(entry)
+    return entry
 
 
 @router.post("/files/upload", response_model=FileOut)

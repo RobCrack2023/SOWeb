@@ -1,0 +1,45 @@
+.tree {
+  padding: 4px;
+  font-size: 13px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.row:hover {
+  background: #e8eefc;
+}
+
+.active {
+  background: #d9e6fd;
+}
+
+.active:hover {
+  background: #d9e6fd;
+}
+
+.chevron {
+  width: 14px;
+  flex: 0 0 auto;
+  text-align: center;
+  color: #888;
+  font-size: 10px;
+}
+
+.icon {
+  font-size: 14px;
+  flex: 0 0 auto;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

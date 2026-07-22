@@ -1,0 +1,185 @@
+.sheet {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+
+.docBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ddd;
+  flex: 0 0 auto;
+}
+
+.nameInput {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 5px 8px;
+  outline: none;
+  color: #1a1a1a;
+}
+
+.nameInput:hover {
+  border-color: #ddd;
+}
+
+.nameInput:focus {
+  border-color: #2f6fed;
+}
+
+.saveBtn {
+  padding: 6px 12px;
+  border: 1px solid #1a7f43;
+  border-radius: 4px;
+  background: #1a7f43;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.saveBtn:disabled {
+  background: #eaeaea;
+  border-color: #ddd;
+  color: #999;
+  cursor: default;
+}
+
+.formulaBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid #ddd;
+  background: #fafafa;
+  flex: 0 0 auto;
+}
+
+.cellName {
+  min-width: 44px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  text-align: center;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 3px 4px;
+  background: #fff;
+}
+
+.fx {
+  font-style: italic;
+  color: #888;
+  font-size: 12px;
+}
+
+.formulaInput {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+.formulaInput:focus {
+  border-color: #1a7f43;
+}
+
+.gridWrap {
+  flex: 1;
+  overflow: auto;
+  outline: none;
+}
+
+.grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.corner {
+  width: 40px;
+  min-width: 40px;
+  background: #f0f0f0;
+  border: 1px solid #d5d5d5;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 3;
+}
+
+.colHead {
+  width: 90px;
+  min-width: 90px;
+  height: 24px;
+  background: #f0f0f0;
+  border: 1px solid #d5d5d5;
+  color: #555;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rowHead {
+  width: 40px;
+  min-width: 40px;
+  background: #f0f0f0;
+  border: 1px solid #d5d5d5;
+  color: #555;
+  font-weight: 600;
+  text-align: center;
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.cell {
+  width: 90px;
+  min-width: 90px;
+  height: 24px;
+  border: 1px solid #e2e2e2;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: cell;
+  color: #1a1a1a;
+}
+
+.cell span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.numeric {
+  text-align: right;
+}
+
+.selectedCell {
+  outline: 2px solid #1a7f43;
+  outline-offset: -2px;
+}
+
+.errorCell {
+  color: #c2272d;
+}
+
+.cellInput {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  padding: 0;
+  background: #fff;
+  color: #1a1a1a;
+}

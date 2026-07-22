@@ -14,6 +14,9 @@ export function DesktopIcon({
   draggable = false,
   onDragStart,
   onDropItem,
+  selected = false,
+  selectionKey,
+  onSelect,
 }: {
   icon: string;
   label: string;
@@ -25,6 +28,9 @@ export function DesktopIcon({
   draggable?: boolean;
   onDragStart?: (e: DragEvent) => void;
   onDropItem?: (payload: DndPayload | null) => void;
+  selected?: boolean;
+  selectionKey?: string;
+  onSelect?: (e: MouseEvent) => void;
 }) {
   const [isOver, setIsOver] = useState(false);
   const canDrop = !!onDropItem;
@@ -38,10 +44,12 @@ export function DesktopIcon({
 
   return (
     <div
-      className={`${styles.icon} ${isOver ? styles.dragOver : ""}`}
+      className={`${styles.icon} ${selected ? styles.selected : ""} ${isOver ? styles.dragOver : ""}`}
       role="button"
       tabIndex={0}
+      data-icon-key={selectionKey}
       draggable={draggable}
+      onMouseDown={onSelect}
       onDragStart={onDragStart}
       onDragOver={canDrop ? (e) => e.preventDefault() : undefined}
       onDragEnter={canDrop ? () => setIsOver(true) : undefined}

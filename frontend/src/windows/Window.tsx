@@ -49,7 +49,7 @@ export function Window({ win }: { win: WindowInstance }) {
         </div>
       </div>
       <div className={styles.content}>
-        <Body {...(win.props ?? {})} />
+        <Body {...(win.props ?? {})} windowId={win.id} />
       </div>
     </Rnd>
   );
