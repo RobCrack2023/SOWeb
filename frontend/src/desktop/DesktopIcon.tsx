@@ -1,6 +1,5 @@
 import { useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { InlineEditLabel } from "../ui/InlineEditLabel";
-import { readDrag, type DndPayload } from "../lib/dnd";
 import styles from "./DesktopIcon.module.css";
 
 export function DesktopIcon({
@@ -27,7 +26,9 @@ export function DesktopIcon({
   onRenameCancel?: () => void;
   draggable?: boolean;
   onDragStart?: (e: DragEvent) => void;
-  onDropItem?: (payload: DndPayload | null) => void;
+  /** Receives the raw event so the parent can tell internal moves from
+   *  files dragged in from the real desktop. */
+  onDropItem?: (e: DragEvent) => void;
   selected?: boolean;
   selectionKey?: string;
   onSelect?: (e: MouseEvent) => void;
@@ -57,10 +58,8 @@ export function DesktopIcon({
       onDrop={
         canDrop
           ? (e) => {
-              e.preventDefault();
-              e.stopPropagation();
               setIsOver(false);
-              onDropItem!(readDrag(e));
+              onDropItem!(e);
             }
           : undefined
       }

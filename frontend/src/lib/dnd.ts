@@ -21,3 +21,16 @@ export function readDrag(e: DragEvent): DndPayload | null {
     return null;
   }
 }
+
+/**
+ * True when the drag carries files from outside the browser (the real desktop).
+ * `types` is readable during dragover, unlike the files themselves, so this is
+ * what we use to decide whether to show the "drop to upload" affordance.
+ */
+export function isExternalFileDrag(e: { dataTransfer: DataTransfer | null }): boolean {
+  const dt = e.dataTransfer;
+  if (!dt) return false;
+  // An internal move also exposes its own MIME; that one wins.
+  if (Array.from(dt.types).includes(DND_MIME)) return false;
+  return Array.from(dt.types).includes("Files");
+}

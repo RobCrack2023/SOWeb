@@ -21,6 +21,8 @@ import { ContextMenu, type ContextMenuState } from "../../ui/ContextMenu";
 import { InlineEditLabel } from "../../ui/InlineEditLabel";
 import { nextFolderName } from "../../lib/names";
 import { startDrag, readDrag, type DndPayload } from "../../lib/dnd";
+import { useExternalDrop } from "../../lib/useExternalDrop";
+import { DropOverlay } from "../../ui/DropOverlay";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
 import { getApp } from "../registry";
@@ -61,6 +63,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   const openApp = useWindowStore((s) => s.openApp);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const fsVersion = useFsStore((s) => s.version);
+  const extDrop = useExternalDrop(() => notifyChange());
 
   const openFileItem = (file: FileOut) => {
     const appId = appForFile(file);
@@ -275,9 +278,10 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
         onDragEnter={() => setDragOverId(folder.id)}
         onDragLeave={() => setDragOverId(null)}
         onDrop={(e) => {
+          setDragOverId(null);
+          if (extDrop.handleDrop(e, folder.id)) return;
           e.preventDefault();
           e.stopPropagation();
-          setDragOverId(null);
           movePayloadInto(readDrag(e), folder.id);
         }}
       >
@@ -354,7 +358,10 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
     <div
       className={styles.explorer}
       onDragOver={(e) => e.preventDefault()}
+      onDragEnter={extDrop.onDragEnter}
+      onDragLeave={extDrop.onDragLeave}
       onDrop={(e) => {
+        if (extDrop.handleDrop(e, currentFolderId)) return;
         e.preventDefault();
         e.stopPropagation();
         movePayloadInto(readDrag(e), currentFolderId);
@@ -423,9 +430,10 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
               onDragEnter={() => setDragOverId(f.id)}
               onDragLeave={() => setDragOverId(null)}
               onDrop={(e) => {
+                setDragOverId(null);
+                if (extDrop.handleDrop(e, f.id)) return;
                 e.preventDefault();
                 e.stopPropagation();
-                setDragOverId(null);
                 movePayloadInto(readDrag(e), f.id);
               }}
             >
@@ -456,6 +464,16 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
           {contents?.files.map(renderFile)}
         </div>
       </div>
+
+      <DropOverlay
+        visible={extDrop.dragging}
+        label={
+          currentFolderId == null
+            ? "Entrá a una carpeta para copiar archivos"
+            : `Soltá para copiar a ${contents?.folder?.name ?? "esta carpeta"}`
+        }
+        progress={extDrop.progress}
+      />
 
       {contextMenu && <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />}
     </div>

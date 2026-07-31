@@ -7,6 +7,8 @@ import { Taskbar } from "./Taskbar";
 import { ContextMenu, type ContextMenuState } from "../ui/ContextMenu";
 import { nextFolderName } from "../lib/names";
 import { startDrag, readDrag, type DndPayload } from "../lib/dnd";
+import { useExternalDrop } from "../lib/useExternalDrop";
+import { DropOverlay } from "../ui/DropOverlay";
 import { useFsStore } from "../lib/fsStore";
 import {
   appForFile,
@@ -42,6 +44,7 @@ export function Desktop() {
   const iconsRef = useRef<HTMLDivElement>(null);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const fsVersion = useFsStore((s) => s.version);
+  const extDrop = useExternalDrop(() => notifyChange());
 
   const selectIcon = (key: string, e: MouseEvent) => {
     const additive = e.ctrlKey || e.metaKey;
@@ -202,9 +205,18 @@ export function Desktop() {
   };
 
   const handleDropOnDesktop = (e: DragEvent) => {
+    if (extDrop.handleDrop(e, desktopId)) return;
     e.preventDefault();
     if (desktopId == null) return;
     movePayloadInto(readDrag(e), desktopId);
+  };
+
+  /** A drop landing on a folder icon: upload into it, or move the item into it. */
+  const handleDropOnFolder = (e: DragEvent, folderId: number) => {
+    if (extDrop.handleDrop(e, folderId)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    movePayloadInto(readDrag(e), folderId);
   };
 
   const openBackgroundMenu = (e: MouseEvent) => {
@@ -260,6 +272,8 @@ export function Desktop() {
       onContextMenu={openBackgroundMenu}
       onMouseDown={startMarquee}
       onDragOver={(e) => e.preventDefault()}
+      onDragEnter={extDrop.onDragEnter}
+      onDragLeave={extDrop.onDragLeave}
       onDrop={handleDropOnDesktop}
     >
       <div className={styles.icons} ref={iconsRef}>
@@ -294,7 +308,7 @@ export function Desktop() {
               onRenameCancel={() => setRenaming(null)}
               draggable
               onDragStart={(e) => startDrag(e, { kind: "folder", id: folder.id })}
-              onDropItem={(payload) => movePayloadInto(payload, folder.id)}
+              onDropItem={(e) => handleDropOnFolder(e, folder.id)}
               selectionKey={key}
               selected={selected.has(key)}
               onSelect={(e) => selectIcon(key, e)}
@@ -338,6 +352,12 @@ export function Desktop() {
       </div>
 
       <Taskbar />
+
+      <DropOverlay
+        visible={extDrop.dragging}
+        label="Soltá para copiar al Escritorio"
+        progress={extDrop.progress}
+      />
 
       {contextMenu && <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />}
     </div>
