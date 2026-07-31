@@ -14,7 +14,10 @@ export function Window({ win }: { win: WindowInstance }) {
     <Rnd
       size={{ width: win.width, height: win.height }}
       position={{ x: win.x, y: win.y }}
-      style={{ zIndex: win.zIndex }}
+      // react-rnd writes `display` as an inline style, which beats anything the
+      // .window class sets. The column layout has to be declared here or the
+      // window is never a flex container and its content escapes the frame.
+      style={{ zIndex: win.zIndex, display: "flex", flexDirection: "column" }}
       minWidth={320}
       minHeight={220}
       bounds="parent"
