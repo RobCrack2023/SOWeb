@@ -228,6 +228,7 @@ export function Desktop() {
         { label: "📝 Nuevo documento", onClick: () => newFileWith("text-editor") },
         { label: "📊 Nueva hoja de cálculo", onClick: () => newFileWith("spreadsheet") },
         { label: "📽️ Nueva presentación", onClick: () => newFileWith("presentation") },
+        { label: "📕 Abrir PDF", onClick: () => newFileWith("pdf") },
         { label: "📁 Nueva carpeta", onClick: handleNewFolder },
         { label: "⬆ Subir archivo", onClick: handleUpload },
         { label: "🔄 Actualizar", onClick: () => notifyChange() },

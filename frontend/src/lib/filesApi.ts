@@ -63,18 +63,30 @@ export const XLSX_MIME =
 export const PPTX_MIME =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
+export const PDF_MIME = "application/pdf";
+/** pdfSO project: the edit list that sits beside an exported PDF. */
+export const PDFSO_MIME = "application/x-soweb-pdf";
+export const PDFSO_EXT = ".pdfso";
+
 type FileLike = { content_type: string | null; name: string };
 
 const hasExt = (file: FileLike, ext: string) => file.name.toLowerCase().endsWith(ext);
 
 /** Office file this maps to, if any — tells an app to run an importer. */
-export type OfficeKind = "docx" | "xlsx" | "pptx";
+export type OfficeKind = "docx" | "xlsx" | "pptx" | "pdf";
 
 export function officeKind(file: FileLike): OfficeKind | null {
   if (hasExt(file, ".docx") || file.content_type === DOCX_MIME) return "docx";
   if (hasExt(file, ".xlsx") || file.content_type === XLSX_MIME) return "xlsx";
   if (hasExt(file, ".pptx") || file.content_type === PPTX_MIME) return "pptx";
+  // A .pdfso project is opened natively, not imported, so exclude it here.
+  if (!hasExt(file, PDFSO_EXT) && (hasExt(file, ".pdf") || file.content_type === PDF_MIME))
+    return "pdf";
   return null;
+}
+
+export function isPdfProject(file: FileLike): boolean {
+  return file.content_type === PDFSO_MIME || hasExt(file, PDFSO_EXT);
 }
 
 export function isDocument(file: FileLike): boolean {
@@ -95,6 +107,8 @@ export function appForFile(file: FileLike): string | null {
   if (office === "docx") return "text-editor";
   if (office === "xlsx") return "spreadsheet";
   if (office === "pptx") return "presentation";
+  if (office === "pdf") return "pdf";
+  if (isPdfProject(file)) return "pdf";
   if (isDocument(file)) return "text-editor";
   if (isSpreadsheet(file)) return "spreadsheet";
   if (isPresentation(file)) return "presentation";
@@ -107,6 +121,8 @@ export function iconForFile(file: FileLike): string {
   if (office === "docx") return "📘";
   if (office === "xlsx") return "📗";
   if (office === "pptx") return "📙";
+  if (office === "pdf") return "📕";
+  if (isPdfProject(file)) return "📕";
   if (isDocument(file)) return "📝";
   if (isSpreadsheet(file)) return "📊";
   if (isPresentation(file)) return "📽️";

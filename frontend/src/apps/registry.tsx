@@ -3,6 +3,7 @@ import { FileExplorer } from "./file-explorer/FileExplorer";
 import { TextEditor } from "./text-editor/TextEditor";
 import { SpreadSheet } from "./spreadsheet/SpreadSheet";
 import { ShowSO } from "./presentation/ShowSO";
+import { PdfSO } from "./pdf/PdfSO";
 
 export interface AppDefinition {
   id: string;
@@ -43,6 +44,14 @@ export const APPS: AppDefinition[] = [
     icon: "📽️",
     component: ShowSO,
     defaultSize: { width: 960, height: 660 },
+    multiInstance: true,
+  },
+  {
+    id: "pdf",
+    title: "pdfSO",
+    icon: "📕",
+    component: PdfSO,
+    defaultSize: { width: 1000, height: 680 },
     multiInstance: true,
   },
 ];

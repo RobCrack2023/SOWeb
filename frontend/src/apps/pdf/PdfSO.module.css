@@ -1,0 +1,324 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f3f3f3;
+  outline: none;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  background: #f3f3f3;
+  color: #555;
+}
+
+.emptyIcon {
+  font-size: 46px;
+}
+
+.emptyMsg {
+  font-size: 14px;
+}
+
+.docBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ddd;
+  background: #fff;
+  flex: 0 0 auto;
+}
+
+.nameInput {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 5px 8px;
+  outline: none;
+  color: #1a1a1a;
+}
+
+.nameInput:hover {
+  border-color: #ddd;
+}
+
+.nameInput:focus {
+  border-color: #b8434f;
+}
+
+.primaryBtn {
+  padding: 6px 12px;
+  border: 1px solid #b8434f;
+  border-radius: 4px;
+  background: #b8434f;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryBtn:disabled {
+  background: #eaeaea;
+  border-color: #ddd;
+  color: #999;
+  cursor: default;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-bottom: 1px solid #ddd;
+  background: #fafafa;
+  flex: 0 0 auto;
+}
+
+.toolBtn {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toolBtn:hover:not(:disabled) {
+  background: #f3eef0;
+}
+
+.toolBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolOn {
+  background: #f6e2e5;
+  border-color: #b8434f;
+  color: #8d2b36;
+}
+
+.sep {
+  width: 1px;
+  height: 20px;
+  background: #ddd;
+  margin: 0 4px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.label {
+  font-size: 11px;
+  color: #777;
+}
+
+.zoomLabel {
+  font-size: 12px;
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #bbb;
+  cursor: pointer;
+}
+
+.busyBar {
+  padding: 5px 10px;
+  background: #fff8e1;
+  border-bottom: 1px solid #f0e0b0;
+  color: #7a5b00;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.warnBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fff4e5;
+  border-bottom: 1px solid #f0d0a0;
+  color: #7a4b00;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+
+.warnClose {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: #7a4b00;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.thumbs {
+  width: 150px;
+  flex: 0 0 auto;
+  border-right: 1px solid #ddd;
+  background: #ececec;
+  overflow-y: auto;
+  padding: 8px 6px;
+}
+
+.thumbRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.thumbRow:hover {
+  background: #e0e0e0;
+}
+
+.thumbActive {
+  background: #f6e2e5;
+}
+
+.thumbIndex {
+  font-size: 11px;
+  color: #777;
+  min-width: 14px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.thumbBox {
+  border: 1px solid #c8c8c8;
+  background: #fff;
+  line-height: 0;
+}
+
+.thumbActive .thumbBox {
+  border-color: #b8434f;
+}
+
+.viewer {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.pageWrap {
+  position: relative;
+  flex: 0 0 auto;
+  background: #fff;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+}
+
+.pageCanvas {
+  display: block;
+}
+
+.spanLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+}
+
+.span {
+  position: absolute;
+  cursor: text;
+  border-radius: 2px;
+  background: rgba(76, 194, 255, 0.14);
+  outline: 1px solid rgba(47, 111, 237, 0.25);
+}
+
+.span:hover {
+  background: rgba(76, 194, 255, 0.35);
+  outline-color: #2f6fed;
+}
+
+.editBox {
+  box-sizing: border-box;
+  border: 1px dashed transparent;
+}
+
+.editBox:hover {
+  border-color: rgba(184, 67, 79, 0.5);
+}
+
+.editSelected {
+  border: 1px solid #b8434f !important;
+}
+
+.fill {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.textView,
+.textArea {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.textArea {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.rotHint {
+  font-size: 12px;
+  color: #8a6d00;
+  background: #fff8e1;
+  border: 1px solid #f0e0b0;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+.statusBar {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+  font-size: 11px;
+  color: #666;
+}
