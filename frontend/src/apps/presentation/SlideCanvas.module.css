@@ -1,0 +1,21 @@
+.outer {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.surface {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
+.element {
+  position: absolute;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.25;
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}

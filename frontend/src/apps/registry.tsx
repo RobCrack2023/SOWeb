@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { FileExplorer } from "./file-explorer/FileExplorer";
 import { TextEditor } from "./text-editor/TextEditor";
 import { SpreadSheet } from "./spreadsheet/SpreadSheet";
+import { ShowSO } from "./presentation/ShowSO";
 
 export interface AppDefinition {
   id: string;
@@ -34,6 +35,14 @@ export const APPS: AppDefinition[] = [
     icon: "📊",
     component: SpreadSheet,
     defaultSize: { width: 900, height: 620 },
+    multiInstance: true,
+  },
+  {
+    id: "presentation",
+    title: "showSO",
+    icon: "📽️",
+    component: ShowSO,
+    defaultSize: { width: 960, height: 660 },
     multiInstance: true,
   },
 ];

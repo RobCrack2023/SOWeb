@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
+  SHEET_EXT,
   SHEET_MIME,
   createTextFile,
+  fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
   updateFileContent,
+  uploadBlob,
+  type ImportRequest,
 } from "../../lib/filesApi";
+import { ensureExt, withExt } from "../../lib/names";
+import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
 import { cellRef, computeAll, displayValue, indexToCol, parseRef, type Cells } from "./formula";
@@ -14,29 +20,35 @@ import styles from "./SpreadSheet.module.css";
 
 const COLS = 26;
 const ROWS = 40;
+const FALLBACK_NAME = "Hoja sin título";
 
 export interface SpreadSheetProps {
   windowId?: string;
   fileId?: number;
   folderId?: number;
+  importFrom?: ImportRequest;
 }
 
-function ensureSheetExt(name: string): string {
-  const trimmed = name.trim() || "Hoja sin título";
-  return trimmed.toLowerCase().endsWith(".sheet") ? trimmed : `${trimmed}.sheet`;
-}
+const ensureSheetExt = (name: string) => ensureExt(name, SHEET_EXT, FALLBACK_NAME);
 
-export function SpreadSheet({ windowId, fileId: initialFileId, folderId }: SpreadSheetProps) {
+export function SpreadSheet({
+  windowId,
+  fileId: initialFileId,
+  folderId: initialFolderId,
+  importFrom,
+}: SpreadSheetProps) {
   const setTitle = useWindowStore((s) => s.setTitle);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const [fileId, setFileId] = useState<number | undefined>(initialFileId);
-  const [name, setName] = useState("Hoja sin título");
+  const [folderId, setFolderId] = useState<number | undefined>(initialFolderId);
+  const [name, setName] = useState(FALLBACK_NAME);
   const [cells, setCells] = useState<Cells>({});
   const [selected, setSelected] = useState("A1");
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const savedNameRef = useRef<string | null>(null);
   const desktopIdRef = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -52,10 +64,32 @@ export function SpreadSheet({ windowId, fileId: initialFileId, folderId }: Sprea
         setCells({});
       }
       setName(doc.name);
+      setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
       setDirty(false);
     });
   }, [initialFileId]);
+
+  // Opening an .xlsx converts it into a new, unsaved native sheet.
+  useEffect(() => {
+    if (!importFrom) return;
+    setBusy("Importando libro de Excel…");
+    fetchFileBytes(importFrom.id)
+      .then(async (bytes) => {
+        const { importXlsx } = await import("../../lib/office/xlsxIO");
+        return importXlsx(bytes);
+      })
+      .then((imported) => {
+        setCells(imported);
+        setName(withExt(importFrom.name, SHEET_EXT));
+        setFolderId(importFrom.folderId);
+        setFileId(undefined);
+        savedNameRef.current = null;
+        setDirty(true);
+      })
+      .catch((err) => window.alert(`No se pudo importar: ${err}`))
+      .finally(() => setBusy(null));
+  }, [importFrom]);
 
   useEffect(() => {
     getDesktopId().then((id) => (desktopIdRef.current = id));
@@ -147,6 +181,42 @@ export function SpreadSheet({ windowId, fileId: initialFileId, folderId }: Sprea
     }
   };
 
+  const importFromDisk = async () => {
+    const file = await pickLocalFile(".xlsx");
+    if (!file) return;
+    setBusy("Importando libro de Excel…");
+    try {
+      const { importXlsx } = await import("../../lib/office/xlsxIO");
+      setCells(await importXlsx(await file.arrayBuffer()));
+      setName(withExt(file.name, SHEET_EXT));
+      setFileId(undefined);
+      savedNameRef.current = null;
+      setDirty(true);
+    } catch (err) {
+      window.alert(`No se pudo importar: ${err}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportToExcel = async () => {
+    const target = folderId ?? desktopIdRef.current;
+    if (target == null) return;
+    setBusy("Exportando a Excel…");
+    try {
+      const { exportXlsx } = await import("../../lib/office/xlsxIO");
+      const xlsxName = withExt(name, ".xlsx");
+      const blob = await exportXlsx(cells, withExt(name, ""));
+      await uploadBlob(target, xlsxName, blob);
+      notifyChange();
+      window.alert(`Exportado como ${xlsxName}`);
+    } catch (err) {
+      window.alert(`No se pudo exportar: ${err}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const save = async () => {
     if (saving) return;
     setSaving(true);
@@ -196,10 +266,18 @@ export function SpreadSheet({ windowId, fileId: initialFileId, folderId }: Sprea
           }}
           spellCheck={false}
         />
+        <button className={styles.officeBtn} onClick={importFromDisk} disabled={!!busy} title="Abrir un .xlsx de tu equipo">
+          📗 Abrir Excel
+        </button>
+        <button className={styles.officeBtn} onClick={exportToExcel} disabled={!!busy} title="Guardar una copia .xlsx en SOWeb">
+          ⤓ Exportar .xlsx
+        </button>
         <button className={styles.saveBtn} onClick={save} disabled={saving || (!dirty && fileId != null)}>
           {saving ? "Guardando…" : dirty || fileId == null ? "💾 Guardar" : "✓ Guardado"}
         </button>
       </div>
+
+      {busy && <div className={styles.busyBar}>{busy}</div>}
 
       <div className={styles.formulaBar}>
         <span className={styles.cellName}>{selected}</span>

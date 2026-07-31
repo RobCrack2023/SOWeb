@@ -3,34 +3,47 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
 import {
+  DOC_EXT,
   createTextFile,
+  fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
   updateFileContent,
+  uploadBlob,
+  type ImportRequest,
 } from "../../lib/filesApi";
+import { ensureExt, withExt } from "../../lib/names";
+import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
 import styles from "./TextEditor.module.css";
+
+const FALLBACK_NAME = "Documento sin título";
 
 export interface TextEditorProps {
   windowId?: string;
   fileId?: number;
   folderId?: number;
+  importFrom?: ImportRequest;
 }
 
-function ensureDocExt(name: string): string {
-  const trimmed = name.trim() || "Documento sin título";
-  return trimmed.toLowerCase().endsWith(".doc") ? trimmed : `${trimmed}.doc`;
-}
+const ensureDocExt = (name: string) => ensureExt(name, DOC_EXT, FALLBACK_NAME);
 
-export function TextEditor({ windowId, fileId: initialFileId, folderId }: TextEditorProps) {
+export function TextEditor({
+  windowId,
+  fileId: initialFileId,
+  folderId: initialFolderId,
+  importFrom,
+}: TextEditorProps) {
   const setTitle = useWindowStore((s) => s.setTitle);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const [fileId, setFileId] = useState<number | undefined>(initialFileId);
-  const [name, setName] = useState("Documento sin título");
+  const [folderId, setFolderId] = useState<number | undefined>(initialFolderId);
+  const [name, setName] = useState(FALLBACK_NAME);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [, force] = useState(0);
   const savedNameRef = useRef<string | null>(null);
   const desktopIdRef = useRef<number | null>(null);
@@ -45,16 +58,39 @@ export function TextEditor({ windowId, fileId: initialFileId, folderId }: TextEd
     onSelectionUpdate: () => force((n) => n + 1),
   });
 
-  // Load existing document content once the editor is ready.
+  // Load an existing native document once the editor is ready.
   useEffect(() => {
     if (!editor || initialFileId == null) return;
     getFileContent(initialFileId).then((doc) => {
       editor.commands.setContent(doc.content || "");
       setName(doc.name);
+      setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
       setDirty(false);
     });
   }, [editor, initialFileId]);
+
+  // Opening a .docx converts it into a new, unsaved native document, leaving
+  // the original Word file untouched.
+  useEffect(() => {
+    if (!editor || !importFrom) return;
+    setBusy("Importando documento de Word…");
+    fetchFileBytes(importFrom.id)
+      .then(async (bytes) => {
+        const { importDocx } = await import("../../lib/office/docxIO");
+        return importDocx(bytes);
+      })
+      .then((html) => {
+        editor.commands.setContent(html || "");
+        setName(withExt(importFrom.name, DOC_EXT));
+        setFolderId(importFrom.folderId);
+        setFileId(undefined);
+        savedNameRef.current = null;
+        setDirty(true);
+      })
+      .catch((err) => window.alert(`No se pudo importar: ${err}`))
+      .finally(() => setBusy(null));
+  }, [editor, importFrom]);
 
   // Preload the desktop id so new documents have a default destination.
   useEffect(() => {
@@ -65,6 +101,45 @@ export function TextEditor({ windowId, fileId: initialFileId, folderId }: TextEd
   useEffect(() => {
     if (windowId) setTitle(windowId, `${dirty ? "● " : ""}${name} — writeSO`);
   }, [windowId, name, dirty, setTitle]);
+
+  const importFromDisk = async () => {
+    if (!editor) return;
+    const file = await pickLocalFile(".docx");
+    if (!file) return;
+    setBusy("Importando documento de Word…");
+    try {
+      const { importDocx } = await import("../../lib/office/docxIO");
+      const html = await importDocx(await file.arrayBuffer());
+      editor.commands.setContent(html || "");
+      setName(withExt(file.name, DOC_EXT));
+      setFileId(undefined);
+      savedNameRef.current = null;
+      setDirty(true);
+    } catch (err) {
+      window.alert(`No se pudo importar: ${err}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportToWord = async () => {
+    if (!editor) return;
+    const target = folderId ?? desktopIdRef.current;
+    if (target == null) return;
+    setBusy("Exportando a Word…");
+    try {
+      const { exportDocx } = await import("../../lib/office/docxIO");
+      const docxName = withExt(name, ".docx");
+      const blob = await exportDocx(editor.getJSON(), docxName);
+      await uploadBlob(target, docxName, blob);
+      notifyChange();
+      window.alert(`Exportado como ${docxName}`);
+    } catch (err) {
+      window.alert(`No se pudo exportar: ${err}`);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const save = async () => {
     if (!editor || saving) return;
@@ -120,10 +195,18 @@ export function TextEditor({ windowId, fileId: initialFileId, folderId }: TextEd
           }}
           spellCheck={false}
         />
+        <button className={styles.officeBtn} onClick={importFromDisk} disabled={!!busy} title="Abrir un .docx de tu equipo">
+          📘 Abrir Word
+        </button>
+        <button className={styles.officeBtn} onClick={exportToWord} disabled={!!busy} title="Guardar una copia .docx en SOWeb">
+          ⤓ Exportar .docx
+        </button>
         <button className={styles.saveBtn} onClick={save} disabled={saving || (!dirty && fileId != null)}>
           {saving ? "Guardando…" : dirty || fileId == null ? "💾 Guardar" : "✓ Guardado"}
         </button>
       </div>
+
+      {busy && <div className={styles.busyBar}>{busy}</div>}
 
       <div className={styles.toolbar}>
         <button className={btn(editor.isActive("bold"))} onClick={() => editor.chain().focus().toggleBold().run()} title="Negrita">

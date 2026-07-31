@@ -1,0 +1,62 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500000;
+  background: #0b0b0d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.hud {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 22px;
+  background: rgba(30, 32, 40, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.25;
+  transition: opacity 150ms ease;
+  cursor: default;
+}
+
+.hud:hover {
+  opacity: 1;
+}
+
+.hudBtn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f0f0f0;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hudBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.hudBtn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.counter {
+  color: #f0f0f0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+  min-width: 54px;
+  text-align: center;
+}

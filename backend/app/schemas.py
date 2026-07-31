@@ -50,6 +50,7 @@ class FileCreate(BaseModel):
 class FileContentOut(BaseModel):
     id: int
     name: str
+    folder_id: int
     content_type: str | None
     content: str
 

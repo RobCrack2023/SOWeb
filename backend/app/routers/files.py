@@ -160,8 +160,16 @@ def get_file_content(file_id: int, db: Session = Depends(get_db)):
     if entry is None:
         raise HTTPException(status_code=404, detail="File not found")
     blob = STORAGE_DIR / entry.storage_path
-    text = blob.read_text(encoding="utf-8") if blob.exists() else ""
-    return FileContentOut(id=entry.id, name=entry.name, content_type=entry.content_type, content=text)
+    # Binary files (uploaded Office documents) are fetched via /download instead;
+    # never fail here just because the bytes aren't valid UTF-8.
+    text = blob.read_text(encoding="utf-8", errors="replace") if blob.exists() else ""
+    return FileContentOut(
+        id=entry.id,
+        name=entry.name,
+        folder_id=entry.folder_id,
+        content_type=entry.content_type,
+        content=text,
+    )
 
 
 @router.put("/files/{file_id}/content", response_model=FileOut)

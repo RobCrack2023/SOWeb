@@ -17,6 +17,7 @@ import {
   getContents,
   getDesktopId,
   iconForFile,
+  officeKind,
   moveFile,
   moveFolder,
   renameFile,
@@ -120,8 +121,16 @@ export function Desktop() {
       window.open(downloadUrl(file.id), "_blank");
       return;
     }
+    const kind = officeKind(file);
     const app = getApp(appId)!;
-    openApp(appId, { title: app.title, ...app.defaultSize, multiInstance: true, props: { fileId: file.id } });
+    openApp(appId, {
+      title: app.title,
+      ...app.defaultSize,
+      multiInstance: true,
+      props: kind
+        ? { importFrom: { id: file.id, name: file.name, kind, folderId: file.folder_id } }
+        : { fileId: file.id },
+    });
   };
 
   const newFileWith = (appId: string) => {
@@ -206,6 +215,7 @@ export function Desktop() {
       items: [
         { label: "📝 Nuevo documento", onClick: () => newFileWith("text-editor") },
         { label: "📊 Nueva hoja de cálculo", onClick: () => newFileWith("spreadsheet") },
+        { label: "📽️ Nueva presentación", onClick: () => newFileWith("presentation") },
         { label: "📁 Nueva carpeta", onClick: handleNewFolder },
         { label: "⬆ Subir archivo", onClick: handleUpload },
         { label: "🔄 Actualizar", onClick: () => notifyChange() },

@@ -28,37 +28,101 @@ export interface FolderContents {
 export interface FileContent {
   id: number;
   name: string;
+  folder_id: number;
   content_type: string | null;
   content: string;
+}
+
+/** An Office file an app should import instead of parsing natively. */
+export interface ImportRequest {
+  id: number;
+  name: string;
+  kind: OfficeKind;
+  folderId: number;
 }
 
 /** content_type used for rich-text documents created by the word processor. */
 export const DOC_MIME = "application/x-soweb-document";
 /** content_type used for spreadsheets. */
 export const SHEET_MIME = "application/x-soweb-sheet";
+/** content_type used for slide decks. */
+export const SLIDES_MIME = "application/x-soweb-slides";
+
+/**
+ * Native extensions are namespaced (".sodoc" rather than ".doc") so they never
+ * collide with real Office files, which we now also open.
+ */
+export const DOC_EXT = ".sodoc";
+export const SHEET_EXT = ".sosheet";
+export const SLIDES_EXT = ".soslides";
+
+export const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export const PPTX_MIME =
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 type FileLike = { content_type: string | null; name: string };
 
+const hasExt = (file: FileLike, ext: string) => file.name.toLowerCase().endsWith(ext);
+
+/** Office file this maps to, if any — tells an app to run an importer. */
+export type OfficeKind = "docx" | "xlsx" | "pptx";
+
+export function officeKind(file: FileLike): OfficeKind | null {
+  if (hasExt(file, ".docx") || file.content_type === DOCX_MIME) return "docx";
+  if (hasExt(file, ".xlsx") || file.content_type === XLSX_MIME) return "xlsx";
+  if (hasExt(file, ".pptx") || file.content_type === PPTX_MIME) return "pptx";
+  return null;
+}
+
 export function isDocument(file: FileLike): boolean {
-  return file.content_type === DOC_MIME || file.name.toLowerCase().endsWith(".doc");
+  return file.content_type === DOC_MIME || hasExt(file, DOC_EXT);
 }
 
 export function isSpreadsheet(file: FileLike): boolean {
-  return file.content_type === SHEET_MIME || file.name.toLowerCase().endsWith(".sheet");
+  return file.content_type === SHEET_MIME || hasExt(file, SHEET_EXT);
+}
+
+export function isPresentation(file: FileLike): boolean {
+  return file.content_type === SLIDES_MIME || hasExt(file, SLIDES_EXT);
 }
 
 /** Which desktop app opens this file on double-click, or null to download. */
 export function appForFile(file: FileLike): string | null {
+  const office = officeKind(file);
+  if (office === "docx") return "text-editor";
+  if (office === "xlsx") return "spreadsheet";
+  if (office === "pptx") return "presentation";
   if (isDocument(file)) return "text-editor";
   if (isSpreadsheet(file)) return "spreadsheet";
+  if (isPresentation(file)) return "presentation";
   return null;
 }
 
 /** Emoji icon shown for a file based on its type. */
 export function iconForFile(file: FileLike): string {
+  const office = officeKind(file);
+  if (office === "docx") return "📘";
+  if (office === "xlsx") return "📗";
+  if (office === "pptx") return "📙";
   if (isDocument(file)) return "📝";
   if (isSpreadsheet(file)) return "📊";
+  if (isPresentation(file)) return "📽️";
   return "📄";
+}
+
+/** Fetch a file's raw bytes (used to feed Office importers). */
+export async function fetchFileBytes(id: number): Promise<ArrayBuffer> {
+  const res = await fetch(downloadUrl(id));
+  if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status})`);
+  return res.arrayBuffer();
+}
+
+/** Store a generated binary (an exported Office file) inside SOWeb. */
+export function uploadBlob(folderId: number, name: string, blob: Blob): Promise<FileOut> {
+  return uploadFile(folderId, new File([blob], name, { type: blob.type }));
 }
 
 export function getDesktopId(): Promise<number> {
