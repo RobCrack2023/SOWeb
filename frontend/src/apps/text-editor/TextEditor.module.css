@@ -125,23 +125,25 @@
 .page {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  /* Scroll in both axes: a wide sheet (A3, landscape) must keep its real size
+     rather than being squeezed to fit, exactly as in Word. */
+  overflow: auto;
   padding: 20px;
-  display: flex;
-  justify-content: center;
 }
 
+/* Width and min-height are set inline from the chosen page size.
+   Auto margins centre the sheet but collapse when it overflows, so the left
+   edge stays reachable — which flexbox centring would clip. */
 .content {
-  width: 100%;
-  max-width: 720px;
-  min-height: 100%;
+  margin: 0 auto;
 }
 
 .content :global(.ProseMirror) {
   background: #fff;
-  min-height: 400px;
-  padding: 48px 56px;
-  border-radius: 4px;
+  min-height: inherit;
+  box-sizing: border-box;
+  padding: var(--page-margin, 48px);
+  border-radius: 2px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   outline: none;
   color: #1a1a1a;
@@ -224,6 +226,17 @@
   width: 4px;
   background: #2f6fed;
   pointer-events: none;
+}
+
+.pageSelect {
+  height: 28px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  padding: 0 4px;
+  cursor: pointer;
 }
 
 .colorSwatch {

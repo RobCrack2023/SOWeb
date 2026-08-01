@@ -220,6 +220,10 @@ export function Desktop() {
   };
 
   const openBackgroundMenu = (e: MouseEvent) => {
+    // A right-click inside an app window belongs to that app — or to the
+    // browser, whose native menu is the only place spelling suggestions exist
+    // (there is no web API to read them). Swallowing it here would remove them.
+    if ((e.target as HTMLElement).closest("[data-window-layer]")) return;
     e.preventDefault();
     setContextMenu({
       x: e.clientX,

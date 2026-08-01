@@ -28,10 +28,42 @@ const STYLE_MAP = [
   "p[style-name='Título 3'] => h3:fresh",
 ].join("\n");
 
-export async function importDocx(bytes: ArrayBuffer): Promise<string> {
+export interface ImportedDocx {
+  html: string;
+  /** Page geometry read from the document, so imports keep their real size. */
+  page: { sizeId: string; landscape: boolean } | null;
+}
+
+export async function importDocx(bytes: ArrayBuffer): Promise<ImportedDocx> {
   const mammoth = await import("mammoth");
   const result = await mammoth.convertToHtml({ arrayBuffer: bytes }, { styleMap: STYLE_MAP });
-  return result.value;
+  return { html: result.value, page: await readPageSize(bytes) };
+}
+
+/**
+ * Mammoth only reports content, so read the section's page size straight from
+ * the package. Word stores it in twips (1/1440 inch) on <w:pgSz>.
+ */
+async function readPageSize(
+  bytes: ArrayBuffer,
+): Promise<{ sizeId: string; landscape: boolean } | null> {
+  try {
+    const JSZip = (await import("jszip")).default;
+    const { matchSize } = await import("../../apps/text-editor/page");
+    const zip = await JSZip.loadAsync(bytes.slice(0));
+    const file = zip.file("word/document.xml");
+    if (!file) return null;
+    const xml = await file.async("string");
+    const m = /<w:pgSz\b[^>]*>/.exec(xml);
+    if (!m) return null;
+    const w = /w:w="(\d+)"/.exec(m[0]);
+    const h = /w:h="(\d+)"/.exec(m[0]);
+    if (!w || !h) return null;
+    const twipToMm = (t: number) => (t / 1440) * 25.4;
+    return matchSize(twipToMm(Number(w[1])), twipToMm(Number(h[1])));
+  } catch {
+    return null;
+  }
 }
 
 /** A TipTap JSON node (loosely typed — we only read what we map). */
@@ -52,7 +84,11 @@ function alignOf(node: TipTapNode): Align | undefined {
   return undefined;
 }
 
-export async function exportDocx(doc: TipTapNode, title: string): Promise<Blob> {
+export async function exportDocx(
+  doc: TipTapNode,
+  title: string,
+  page?: { widthMm: number; heightMm: number; marginMm: number },
+): Promise<Blob> {
   const {
     Document,
     Packer,
@@ -64,6 +100,7 @@ export async function exportDocx(doc: TipTapNode, title: string): Promise<Blob> 
     TableRow,
     TableCell,
     WidthType,
+    convertMillimetersToTwip,
   } = await import("docx");
 
   const alignMap: Record<Align, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
@@ -220,7 +257,27 @@ export async function exportDocx(doc: TipTapNode, title: string): Promise<Blob> 
         },
       ],
     },
-    sections: [{ children: paragraphs }],
+    sections: [
+      {
+        properties: page
+          ? {
+              page: {
+                size: {
+                  width: convertMillimetersToTwip(page.widthMm),
+                  height: convertMillimetersToTwip(page.heightMm),
+                },
+                margin: {
+                  top: convertMillimetersToTwip(page.marginMm),
+                  bottom: convertMillimetersToTwip(page.marginMm),
+                  left: convertMillimetersToTwip(page.marginMm),
+                  right: convertMillimetersToTwip(page.marginMm),
+                },
+              },
+            }
+          : undefined,
+        children: paragraphs,
+      },
+    ],
   });
 
   const blob = await Packer.toBlob(file);

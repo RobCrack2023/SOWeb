@@ -19,6 +19,15 @@ import { ensureExt, withExt } from "../../lib/names";
 import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
+import {
+  DEFAULT_PAGE,
+  PAGE_SIZES,
+  mmToPx,
+  pageDimsMm,
+  parseStoredDoc,
+  serialiseDoc,
+  type PageSetup,
+} from "./page";
 import styles from "./TextEditor.module.css";
 
 const FALLBACK_NAME = "Documento sin título";
@@ -47,6 +56,7 @@ export function TextEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [page, setPage] = useState<PageSetup>(DEFAULT_PAGE);
   const [, force] = useState(0);
   const savedNameRef = useRef<string | null>(null);
   const desktopIdRef = useRef<number | null>(null);
@@ -63,6 +73,11 @@ export function TextEditor({
       Color,
     ],
     content: "",
+    editorProps: {
+      // Tell the browser to spellcheck in Spanish; its native context menu is
+      // the only place the correction suggestions are exposed.
+      attributes: { spellcheck: "true", lang: "es" },
+    },
     onUpdate: () => {
       setDirty(true);
       force((n) => n + 1);
@@ -74,7 +89,9 @@ export function TextEditor({
   useEffect(() => {
     if (!editor || initialFileId == null) return;
     getFileContent(initialFileId).then((doc) => {
-      editor.commands.setContent(doc.content || "");
+      const stored = parseStoredDoc(doc.content || "");
+      editor.commands.setContent(stored.html);
+      setPage(stored.page);
       setName(doc.name);
       setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
@@ -92,8 +109,9 @@ export function TextEditor({
         const { importDocx } = await import("../../lib/office/docxIO");
         return importDocx(bytes);
       })
-      .then((html) => {
-        editor.commands.setContent(html || "");
+      .then((imported) => {
+        editor.commands.setContent(imported.html || "");
+        if (imported.page) setPage((p) => ({ ...p, ...imported.page! }));
         setName(withExt(importFrom.name, DOC_EXT));
         setFolderId(importFrom.folderId);
         setFileId(undefined);
@@ -121,8 +139,9 @@ export function TextEditor({
     setBusy("Importando documento de Word…");
     try {
       const { importDocx } = await import("../../lib/office/docxIO");
-      const html = await importDocx(await file.arrayBuffer());
-      editor.commands.setContent(html || "");
+      const imported = await importDocx(await file.arrayBuffer());
+      editor.commands.setContent(imported.html || "");
+      if (imported.page) setPage((p) => ({ ...p, ...imported.page! }));
       setName(withExt(file.name, DOC_EXT));
       setFileId(undefined);
       savedNameRef.current = null;
@@ -142,7 +161,11 @@ export function TextEditor({
     try {
       const { exportDocx } = await import("../../lib/office/docxIO");
       const docxName = withExt(name, ".docx");
-      const blob = await exportDocx(editor.getJSON(), docxName);
+      const dims = pageDimsMm(page);
+      const blob = await exportDocx(editor.getJSON(), docxName, {
+        ...dims,
+        marginMm: page.marginMm,
+      });
       await uploadBlob(target, docxName, blob);
       notifyChange();
       window.alert(`Exportado como ${docxName}`);
@@ -157,17 +180,18 @@ export function TextEditor({
     if (!editor || saving) return;
     setSaving(true);
     try {
-      const html = editor.getHTML();
+      // Stored as an envelope so the page setup travels with the text.
+      const payload = serialiseDoc({ page, html: editor.getHTML() });
       if (fileId == null) {
         const target = folderId ?? desktopIdRef.current;
         if (target == null) return;
         const finalName = ensureDocExt(name);
-        const created = await createTextFile(finalName, target, html);
+        const created = await createTextFile(finalName, target, payload);
         setFileId(created.id);
         setName(created.name);
         savedNameRef.current = created.name;
       } else {
-        await updateFileContent(fileId, html);
+        await updateFileContent(fileId, payload);
         const finalName = ensureDocExt(name);
         if (savedNameRef.current !== finalName) {
           await renameFile(fileId, finalName);
@@ -269,6 +293,32 @@ export function TextEditor({
           />
         ))}
         <span className={styles.tsep} />
+        <select
+          className={styles.pageSelect}
+          value={page.sizeId}
+          onChange={(e) => {
+            setPage((p) => ({ ...p, sizeId: e.target.value }));
+            setDirty(true);
+          }}
+          title="Tamaño de página"
+        >
+          {PAGE_SIZES.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <button
+          className={btn(page.landscape)}
+          onClick={() => {
+            setPage((p) => ({ ...p, landscape: !p.landscape }));
+            setDirty(true);
+          }}
+          title={page.landscape ? "Orientación horizontal" : "Orientación vertical"}
+        >
+          {page.landscape ? "▭" : "▯"}
+        </button>
+        <span className={styles.tsep} />
         <button
           className={styles.tbtn}
           onClick={() =>
@@ -300,7 +350,16 @@ export function TextEditor({
       </div>
 
       <div className={styles.page}>
-        <EditorContent editor={editor} className={styles.content} />
+        <EditorContent
+          editor={editor}
+          className={styles.content}
+          style={{
+            width: mmToPx(pageDimsMm(page).widthMm),
+            // Show at least a full sheet so the page feels physical.
+            minHeight: mmToPx(pageDimsMm(page).heightMm),
+            ["--page-margin" as string]: `${mmToPx(page.marginMm)}px`,
+          }}
+        />
       </div>
     </div>
   );
