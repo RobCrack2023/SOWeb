@@ -16,7 +16,15 @@ import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
 import { PageCanvas } from "./PageCanvas";
-import { loadPdf, savePdf, viewToPage, type LoadedPdf, type TextSpan } from "./pdfEngine";
+import { CSS_FAMILY, baselineOffset } from "./textMetrics";
+import {
+  loadPdf,
+  sampleBackground,
+  savePdf,
+  viewToPage,
+  type LoadedPdf,
+  type TextSpan,
+} from "./pdfEngine";
 import {
   BLACK,
   HIGHLIGHT_COLORS,
@@ -64,6 +72,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const [color, setColor] = useState<Rgb>(BLACK);
   const [warnRedaction, setWarnRedaction] = useState(false);
 
+  const pageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalRef = useRef<ArrayBuffer | null>(null);
   const desktopIdRef = useRef<number | null>(null);
   const sidecarIdRef = useRef<number | undefined>(fileId);
@@ -172,32 +181,43 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const replaceSpan = (span: TextSpan) => {
     if (!page) return;
     const pad = 1;
-    addEdit({
-      id: uid("r"),
-      kind: "rect",
-      page: page.sourceIndex,
+    const cover = {
       x: span.x - pad,
       y: span.y - pad,
       w: span.w + pad * 2,
       h: span.h + pad * 2,
-      color: WHITE,
+    };
+    // Match the surrounding page colour so the patch doesn't show.
+    const bg = pageCanvasRef.current
+      ? sampleBackground(pageCanvasRef.current, cover, zoom)
+      : WHITE;
+
+    const rect = {
+      id: uid("r"),
+      kind: "rect" as const,
+      page: page.sourceIndex,
+      ...cover,
+      color: bg,
       opacity: 1,
-    });
+    };
     const textEdit: TextEdit = {
       id: uid("t"),
       kind: "text",
       page: page.sourceIndex,
       x: span.x,
       y: span.y,
-      w: Math.max(span.w + 40, 60),
+      w: Math.max(span.w, 40),
       h: span.h,
       text: span.str,
       fontSize: span.fontSize,
       color: BLACK,
-      bold: false,
-      italic: false,
+      bold: span.bold,
+      italic: span.italic,
+      baseline: span.baseline,
+      family: span.family,
     };
-    mutate((s) => ({ ...s, edits: [...s.edits, textEdit] }));
+    // Add both at once so the cover always sits under its replacement.
+    mutate((s) => ({ ...s, edits: [...s.edits, rect, textEdit] }));
     setSelectedId(textEdit.id);
     setEditingId(textEdit.id);
     setTool("select");
@@ -218,6 +238,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     const { x, y } = viewToPage(vx, vy, page.rotation, pageSize.width, pageSize.height);
 
     if (tool === "text") {
+      const fontSize = 14;
       const edit: TextEdit = {
         id: uid("t"),
         kind: "text",
@@ -225,12 +246,15 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
         x,
         y,
         w: 220,
-        h: 20,
+        h: fontSize * 0.93,
         text: "Texto",
-        fontSize: 14,
+        fontSize,
         color,
         bold: false,
         italic: false,
+        // Helvetica's ascent, so a fresh box behaves like a replaced run.
+        baseline: y + fontSize * 0.718,
+        family: "sans",
       };
       addEdit(edit);
       setEditingId(edit.id);
@@ -586,34 +610,40 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
               scale={zoom}
               rotation={page!.rotation}
               className={styles.pageCanvas}
+              canvasRef={pageCanvasRef}
             />
 
-            {/* Original text: click to cover-and-replace. */}
-            {showSpans && page!.rotation === 0 && (
-              <div className={styles.spanLayer}>
-                {spans.map((s, i) => (
-                  <div
-                    key={i}
-                    className={styles.span}
-                    style={{
-                      left: s.x * zoom,
-                      top: s.y * zoom,
-                      width: s.w * zoom,
-                      height: s.h * zoom,
-                    }}
-                    title={`Reemplazar: ${s.str}`}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      replaceSpan(s);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
+            {/* Overlays live in page-point coordinates and are scaled as a
+                whole, so they stay glued to the page at every zoom level. */}
+            <div
+              className={styles.overlay}
+              style={{
+                width: pageSize!.width,
+                height: pageSize!.height,
+                transform: `scale(${zoom})`,
+              }}
+            >
+              {/* Original text: click to cover-and-replace. */}
+              {showSpans && page!.rotation === 0 && (
+                <div className={styles.spanLayer}>
+                  {spans.map((s, i) => (
+                    <div
+                      key={i}
+                      className={styles.span}
+                      style={{ left: s.x, top: s.y, width: s.w, height: s.h }}
+                      title={`Reemplazar: ${s.str}`}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        replaceSpan(s);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
 
-            {/* Our edits, movable and resizable. */}
-            {page!.rotation === 0 &&
-              pageEdits.map((edit) => (
+              {/* Our edits, movable and resizable. */}
+              {page!.rotation === 0 &&
+                pageEdits.map((edit) => (
                 <Rnd
                   key={edit.id}
                   scale={zoom}
@@ -623,7 +653,15 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
                   disableDragging={editingId === edit.id}
                   enableResizing={editingId !== edit.id}
                   onDragStop={(_e, d) =>
-                    updateEdit(edit.id, { x: Math.round(d.x), y: Math.round(d.y) })
+                    updateEdit(edit.id, {
+                      x: Math.round(d.x),
+                      y: Math.round(d.y),
+                      // Carry the baseline along, or dragged text would snap
+                      // back to where it was originally anchored.
+                      ...(edit.kind === "text"
+                        ? { baseline: edit.baseline + (Math.round(d.y) - edit.y) }
+                        : {}),
+                    })
                   }
                   onResizeStop={(_e, _dir, ref, _delta, pos) =>
                     updateEdit(edit.id, {
@@ -651,39 +689,44 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
                     <img className={styles.fill} src={edit.dataUrl} alt="" draggable={false} />
                   )}
                   {edit.kind === "text" &&
-                    (editingId === edit.id ? (
-                      <textarea
-                        className={styles.textArea}
-                        autoFocus
-                        value={edit.text}
-                        style={{
-                          fontSize: edit.fontSize,
-                          color: rgbToCss(edit.color),
-                          fontWeight: edit.bold ? 700 : 400,
-                          fontStyle: edit.italic ? "italic" : "normal",
-                        }}
-                        onChange={(ev) => updateEdit(edit.id, { text: ev.target.value })}
-                        onBlur={() => setEditingId(null)}
-                        onKeyDown={(ev) => {
-                          if (ev.key === "Escape") setEditingId(null);
-                          ev.stopPropagation();
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className={styles.textView}
-                        style={{
-                          fontSize: edit.fontSize,
-                          color: rgbToCss(edit.color),
-                          fontWeight: edit.bold ? 700 : 400,
-                          fontStyle: edit.italic ? "italic" : "normal",
-                        }}
-                      >
-                        {edit.text}
-                      </div>
-                    ))}
+                    (() => {
+                      const family = edit.family ?? "sans";
+                      // Place the glyphs so their baseline falls exactly where
+                      // the PDF will draw it, matching the preview to the file.
+                      const textStyle: React.CSSProperties = {
+                        position: "absolute",
+                        left: 0,
+                        top: edit.baseline - edit.y - baselineOffset(family, edit.fontSize, edit.bold, edit.italic),
+                        width: "100%",
+                        fontSize: edit.fontSize,
+                        lineHeight: 1,
+                        fontFamily: CSS_FAMILY[family],
+                        color: rgbToCss(edit.color),
+                        fontWeight: edit.bold ? 700 : 400,
+                        fontStyle: edit.italic ? "italic" : "normal",
+                      };
+                      return editingId === edit.id ? (
+                        <textarea
+                          className={styles.textArea}
+                          autoFocus
+                          value={edit.text}
+                          style={textStyle}
+                          onChange={(ev) => updateEdit(edit.id, { text: ev.target.value })}
+                          onBlur={() => setEditingId(null)}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Escape") setEditingId(null);
+                            ev.stopPropagation();
+                          }}
+                        />
+                      ) : (
+                        <div className={styles.textView} style={textStyle}>
+                          {edit.text}
+                        </div>
+                      );
+                    })()}
                 </Rnd>
               ))}
+            </div>
           </div>
 
           {page!.rotation !== 0 && (

@@ -5,7 +5,7 @@
  * only pulled in when pdfSO actually opens a document.
  */
 
-import type { PdfDocState, PdfEdit, Rgb } from "./types";
+import type { FontFamily, PdfDocState, PdfEdit, Rgb } from "./types";
 
 export interface TextSpan {
   str: string;
@@ -15,6 +15,11 @@ export interface TextSpan {
   w: number;
   h: number;
   fontSize: number;
+  /** Distance from the page top to the text baseline. */
+  baseline: number;
+  family: FontFamily;
+  bold: boolean;
+  italic: boolean;
 }
 
 export interface LoadedPage {
@@ -85,27 +90,100 @@ export async function loadPdf(bytes: ArrayBuffer): Promise<LoadedPdf> {
       const page = await doc.getPage(pageIndex + 1);
       const vp = page.getViewport({ scale: 1 });
       const content = await page.getTextContent();
+      // pdf.js reports per-font metrics here: family plus ascent/descent as
+      // fractions of the em, which is what lets us land on the exact baseline.
+      const styles = (content.styles ?? {}) as Record<
+        string,
+        { fontFamily?: string; ascent?: number; descent?: number }
+      >;
+
       const spans: TextSpan[] = [];
       for (const item of content.items) {
         if (!("str" in item) || !item.str.trim()) continue;
-        // transform = [a, b, c, d, e, f]; e/f is the baseline origin and
-        // |d| approximates the glyph height in points.
-        const [, , , d, e, f] = item.transform as number[];
-        const fontSize = Math.abs(d) || 12;
+        const [, , c, d, e, f] = item.transform as number[];
+        const fontSize = Math.hypot(c, d) || Math.abs(d) || 12;
+        const style = styles[item.fontName] ?? {};
+        const ascent = typeof style.ascent === "number" && style.ascent > 0 ? style.ascent : 0.72;
+        const descent = typeof style.descent === "number" ? Math.abs(style.descent) : 0.21;
+
+        // The real font name (e.g. "ABCDEF+Arial-BoldMT") carries the weight and
+        // slant that the generic family alone doesn't; it's only there once the
+        // page has been rendered, so treat it as optional.
+        let rawName = "";
+        try {
+          rawName = (page.commonObjs.get(item.fontName) as { name?: string })?.name ?? "";
+        } catch {
+          /* font not resolved yet */
+        }
+        const lower = `${rawName} ${item.fontName}`.toLowerCase();
+        const generic = (style.fontFamily ?? "").toLowerCase();
+        const family: FontFamily = generic.includes("mono")
+          ? "mono"
+          : generic.includes("serif") && !generic.includes("sans")
+            ? "serif"
+            : "sans";
+
+        const baseline = vp.height - f;
         spans.push({
           str: item.str,
           x: e,
-          // f is the baseline measured from the bottom; convert to a top-left box.
-          y: vp.height - f - fontSize,
+          y: baseline - ascent * fontSize,
           w: item.width || fontSize * item.str.length * 0.5,
-          h: fontSize * 1.2,
+          h: (ascent + descent) * fontSize,
           fontSize,
+          baseline,
+          family,
+          bold: /bold|black|heavy|semibold/.test(lower),
+          italic: /italic|oblique/.test(lower),
         });
       }
       return spans;
     },
     destroy: () => void loadingTask.destroy(),
   };
+}
+
+/**
+ * Sample the page background just outside a text run so the rectangle that
+ * covers it blends in, instead of punching a white hole through shaded table
+ * cells or coloured banners.
+ */
+export function sampleBackground(
+  canvas: HTMLCanvasElement,
+  box: { x: number; y: number; w: number; h: number },
+  scale: number,
+): Rgb {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const fallback: Rgb = { r: 1, g: 1, b: 1 };
+  if (!ctx) return fallback;
+
+  const px = (v: number) => Math.round(v * scale);
+  const probes: [number, number][] = [
+    [px(box.x + box.w / 2), px(box.y) - 3],
+    [px(box.x + box.w / 2), px(box.y + box.h) + 3],
+    [px(box.x) - 4, px(box.y + box.h / 2)],
+    [px(box.x + box.w) + 4, px(box.y + box.h / 2)],
+  ];
+
+  const counts = new Map<string, { rgb: Rgb; n: number }>();
+  for (const [x, y] of probes) {
+    if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) continue;
+    const d = ctx.getImageData(x, y, 1, 1).data;
+    const key = `${d[0]},${d[1]},${d[2]}`;
+    const entry = counts.get(key);
+    if (entry) entry.n += 1;
+    else counts.set(key, { rgb: { r: d[0] / 255, g: d[1] / 255, b: d[2] / 255 }, n: 1 });
+  }
+
+  let best = fallback;
+  let bestN = 0;
+  for (const { rgb: c, n } of counts.values()) {
+    if (n > bestN) {
+      bestN = n;
+      best = c;
+    }
+  }
+  return best;
 }
 
 /** Rotation-aware conversion from on-screen point to unrotated page space. */
@@ -172,11 +250,30 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
     kept.map((p) => p.sourceIndex),
   );
 
-  const regular = await out.embedFont(StandardFonts.Helvetica);
-  const bold = await out.embedFont(StandardFonts.HelveticaBold);
-  const italic = await out.embedFont(StandardFonts.HelveticaOblique);
-  const boldItalic = await out.embedFont(StandardFonts.HelveticaBoldOblique);
-  const pick = (b: boolean, i: boolean) => (b && i ? boldItalic : b ? bold : i ? italic : regular);
+  // Embed the standard-14 equivalents of each family so replacement text keeps
+  // the look of what it replaced rather than always coming back as Helvetica.
+  const fonts = {
+    sans: [
+      await out.embedFont(StandardFonts.Helvetica),
+      await out.embedFont(StandardFonts.HelveticaBold),
+      await out.embedFont(StandardFonts.HelveticaOblique),
+      await out.embedFont(StandardFonts.HelveticaBoldOblique),
+    ],
+    serif: [
+      await out.embedFont(StandardFonts.TimesRoman),
+      await out.embedFont(StandardFonts.TimesRomanBold),
+      await out.embedFont(StandardFonts.TimesRomanItalic),
+      await out.embedFont(StandardFonts.TimesRomanBoldItalic),
+    ],
+    mono: [
+      await out.embedFont(StandardFonts.Courier),
+      await out.embedFont(StandardFonts.CourierBold),
+      await out.embedFont(StandardFonts.CourierOblique),
+      await out.embedFont(StandardFonts.CourierBoldOblique),
+    ],
+  };
+  const pick = (family: FontFamily, b: boolean, i: boolean) =>
+    fonts[family][(b ? 1 : 0) + (i ? 2 : 0)];
 
   const col = (c: Rgb) => rgb(c.r, c.g, c.b);
 
@@ -185,13 +282,13 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
     const page = copied[i];
     out.addPage(page);
 
-    const { width, height } = page.getSize();
+    const { height } = page.getSize();
     const edits = state.edits.filter((e) => e.page === pageState.sourceIndex);
 
     for (const edit of edits) {
       // Our model is top-left origin; PDF is bottom-left.
       const bottom = height - edit.y - edit.h;
-      await drawEdit(page, edit, bottom, width, height);
+      await drawEdit(page, edit, bottom, height);
     }
 
     if (pageState.rotation) {
@@ -204,8 +301,7 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
     page: Awaited<ReturnType<typeof out.copyPages>>[number],
     edit: PdfEdit,
     bottom: number,
-    _pageW: number,
-    _pageH: number,
+    pageH: number,
   ) {
     if (edit.kind === "rect") {
       page.drawRectangle({
@@ -227,16 +323,16 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
       page.drawImage(img, { x: edit.x, y: bottom, width: edit.w, height: edit.h });
       return;
     }
-    const font = pick(edit.bold, edit.italic);
-    // drawText places the baseline; nudge down from the box top by the ascent.
+    const font = pick(edit.family ?? "sans", edit.bold, edit.italic);
+    // drawText positions by baseline, which is exactly what we captured from
+    // the original run — so the replacement lands on the very same line.
     page.drawText(sanitise(edit.text), {
       x: edit.x,
-      y: bottom + edit.h - edit.fontSize,
+      y: pageH - edit.baseline,
       size: edit.fontSize,
       font,
       color: col(edit.color),
-      lineHeight: edit.fontSize * 1.2,
-      maxWidth: edit.w,
+      lineHeight: edit.fontSize * 1.15,
     });
   }
 

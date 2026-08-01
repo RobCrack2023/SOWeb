@@ -245,6 +245,15 @@
   display: block;
 }
 
+/* Holds every overlay in page-point coordinates; scaled as one so zooming
+   never drifts the edits away from the page underneath. */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+}
+
 .spanLayer {
   position: absolute;
   inset: 0;
@@ -284,25 +293,24 @@
   display: block;
 }
 
+/* Positioning comes from the inline style so the baseline lands exactly. */
 .textView,
 .textArea {
-  width: 100%;
-  height: 100%;
   margin: 0;
   padding: 0;
   border: none;
   outline: none;
   resize: none;
-  overflow: hidden;
+  overflow: visible;
   background: transparent;
-  font-family: Helvetica, Arial, sans-serif;
-  line-height: 1.2;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
 }
 
 .textArea {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
+  outline: 1px solid #b8434f;
+  white-space: pre;
+  overflow: hidden;
 }
 
 .rotHint {

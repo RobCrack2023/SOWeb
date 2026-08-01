@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { LoadedPdf } from "./pdfEngine";
 
 /** Renders one PDF page into a canvas, re-rendering on zoom/rotation change. */
@@ -8,14 +8,18 @@ export function PageCanvas({
   scale,
   rotation,
   className,
+  canvasRef,
 }: {
   pdf: LoadedPdf;
   pageIndex: number;
   scale: number;
   rotation: number;
   className?: string;
+  /** Exposed so the editor can read pixels back for background sampling. */
+  canvasRef?: RefObject<HTMLCanvasElement | null>;
 }) {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const own = useRef<HTMLCanvasElement>(null);
+  const ref = canvasRef ?? own;
 
   useEffect(() => {
     let cancelled = false;

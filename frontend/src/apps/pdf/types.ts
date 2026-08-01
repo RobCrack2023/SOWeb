@@ -26,6 +26,8 @@ export interface BaseEdit {
   h: number;
 }
 
+export type FontFamily = "sans" | "serif" | "mono";
+
 export interface TextEdit extends BaseEdit {
   kind: "text";
   text: string;
@@ -33,6 +35,13 @@ export interface TextEdit extends BaseEdit {
   color: Rgb;
   bold: boolean;
   italic: boolean;
+  /**
+   * Distance from the top of the page to the text baseline. PDF positions text
+   * by its baseline, not by a box, so storing it is what keeps replaced text
+   * sitting exactly where the original sat instead of drifting.
+   */
+  baseline: number;
+  family: FontFamily;
 }
 
 export interface RectEdit extends BaseEdit {
