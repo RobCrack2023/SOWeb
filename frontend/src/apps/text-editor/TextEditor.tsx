@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import TextAlign from "@tiptap/extension-text-align";
+import { TableKit } from "@tiptap/extension-table";
+import { TextStyle, Color } from "@tiptap/extension-text-style";
 import {
   DOC_EXT,
   createTextFile,
@@ -20,6 +22,7 @@ import { useFsStore } from "../../lib/fsStore";
 import styles from "./TextEditor.module.css";
 
 const FALLBACK_NAME = "Documento sin título";
+const TEXT_COLORS = ["#1a1a1a", "#c2272d", "#1f4e79", "#1a7f43", "#b06000"];
 
 export interface TextEditorProps {
   windowId?: string;
@@ -49,7 +52,16 @@ export function TextEditor({
   const desktopIdRef = useRef<number | null>(null);
 
   const editor = useEditor({
-    extensions: [StarterKit, TextAlign.configure({ types: ["heading", "paragraph"] })],
+    extensions: [
+      StarterKit,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      // Without table nodes ProseMirror silently drops <table> and flattens
+      // every cell into a loose paragraph, which is how Word tables were
+      // getting lost on import.
+      TableKit.configure({ table: { resizable: true } }),
+      TextStyle,
+      Color,
+    ],
     content: "",
     onUpdate: () => {
       setDirty(true);
@@ -182,6 +194,7 @@ export function TextEditor({
   }
 
   const btn = (active: boolean) => `${styles.tbtn} ${active ? styles.tbtnActive : ""}`;
+  const inTable = editor.isActive("table");
 
   return (
     <div className={styles.editor} onKeyDown={onKeyDown}>
@@ -245,6 +258,45 @@ export function TextEditor({
         <button className={btn(editor.isActive({ textAlign: "right" }))} onClick={() => editor.chain().focus().setTextAlign("right").run()} title="Alinear derecha">
           ⯈
         </button>
+        <span className={styles.tsep} />
+        {TEXT_COLORS.map((c) => (
+          <button
+            key={c}
+            className={styles.colorSwatch}
+            style={{ background: c }}
+            onClick={() => editor.chain().focus().setColor(c).run()}
+            title={`Color ${c}`}
+          />
+        ))}
+        <span className={styles.tsep} />
+        <button
+          className={styles.tbtn}
+          onClick={() =>
+            editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+          }
+          title="Insertar tabla"
+        >
+          ⊞ Tabla
+        </button>
+        {inTable && (
+          <>
+            <button className={styles.tbtn} onClick={() => editor.chain().focus().addRowAfter().run()} title="Agregar fila">
+              +Fila
+            </button>
+            <button className={styles.tbtn} onClick={() => editor.chain().focus().addColumnAfter().run()} title="Agregar columna">
+              +Col
+            </button>
+            <button className={styles.tbtn} onClick={() => editor.chain().focus().deleteRow().run()} title="Quitar fila">
+              −Fila
+            </button>
+            <button className={styles.tbtn} onClick={() => editor.chain().focus().deleteColumn().run()} title="Quitar columna">
+              −Col
+            </button>
+            <button className={styles.tbtn} onClick={() => editor.chain().focus().deleteTable().run()} title="Eliminar tabla">
+              🗑 Tabla
+            </button>
+          </>
+        )}
       </div>
 
       <div className={styles.page}>

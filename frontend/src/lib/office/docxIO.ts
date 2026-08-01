@@ -9,9 +9,28 @@
 
 import { DOCX_MIME } from "../filesApi";
 
+/**
+ * Mammoth converts semantically and drops direct formatting by default, so we
+ * opt back into the marks writeSO can represent. Underline especially: it is
+ * ignored out of the box because Word often uses it for links.
+ */
+const STYLE_MAP = [
+  "u => u",
+  "strike => s",
+  "r[style-name='Strong'] => strong",
+  "p[style-name='Title'] => h1:fresh",
+  "p[style-name='Subtitle'] => h2:fresh",
+  "p[style-name='Heading 1'] => h1:fresh",
+  "p[style-name='Heading 2'] => h2:fresh",
+  "p[style-name='Heading 3'] => h3:fresh",
+  "p[style-name='Título 1'] => h1:fresh",
+  "p[style-name='Título 2'] => h2:fresh",
+  "p[style-name='Título 3'] => h3:fresh",
+].join("\n");
+
 export async function importDocx(bytes: ArrayBuffer): Promise<string> {
   const mammoth = await import("mammoth");
-  const result = await mammoth.convertToHtml({ arrayBuffer: bytes });
+  const result = await mammoth.convertToHtml({ arrayBuffer: bytes }, { styleMap: STYLE_MAP });
   return result.value;
 }
 
@@ -41,6 +60,10 @@ export async function exportDocx(doc: TipTapNode, title: string): Promise<Blob> 
     TextRun,
     HeadingLevel,
     AlignmentType,
+    Table,
+    TableRow,
+    TableCell,
+    WidthType,
   } = await import("docx");
 
   const alignMap: Record<Align, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
@@ -59,80 +82,127 @@ export async function exportDocx(doc: TipTapNode, title: string): Promise<Blob> 
           ? HeadingLevel.HEADING_3
           : HeadingLevel.HEADING_4;
 
-  const runsOf = (node: TipTapNode): InstanceType<typeof TextRun>[] => {
+  const runsOf = (node: TipTapNode, inherited?: { color?: string }): InstanceType<typeof TextRun>[] => {
     const out: InstanceType<typeof TextRun>[] = [];
     for (const child of node.content ?? []) {
       if (child.type === "text" && child.text) {
-        const marks = new Set((child.marks ?? []).map((m) => m.type));
+        const marks = child.marks ?? [];
+        const kinds = new Set(marks.map((m) => m.type));
+        // Colour rides on a `textStyle` mark rather than being its own type.
+        const styleMark = marks.find((m) => m.type === "textStyle") as
+          | { attrs?: { color?: string } }
+          | undefined;
+        const hex = (styleMark?.attrs?.color ?? inherited?.color ?? "").replace("#", "");
         out.push(
           new TextRun({
             text: child.text,
-            bold: marks.has("bold"),
-            italics: marks.has("italic"),
-            strike: marks.has("strike"),
-            underline: marks.has("underline") ? {} : undefined,
+            bold: kinds.has("bold"),
+            italics: kinds.has("italic"),
+            strike: kinds.has("strike"),
+            underline: kinds.has("underline") ? {} : undefined,
+            color: hex || undefined,
           }),
         );
       } else if (child.type === "hardBreak") {
         out.push(new TextRun({ text: "", break: 1 }));
       } else if (child.content) {
-        out.push(...runsOf(child));
+        out.push(...runsOf(child, inherited));
       }
     }
     return out;
   };
 
-  const paragraphs: InstanceType<typeof Paragraph>[] = [];
+  type Block = InstanceType<typeof Paragraph> | InstanceType<typeof Table>;
 
-  const walk = (node: TipTapNode, listKind?: "bullet" | "ordered", depth = 0) => {
+  const paragraphFor = (
+    node: TipTapNode,
+    listKind?: "bullet" | "ordered",
+    depth = 0,
+    opts?: { color?: string },
+  ) =>
+    new Paragraph({
+      children: runsOf(node, opts),
+      alignment: alignOf(node) ? alignMap[alignOf(node)!] : undefined,
+      ...(listKind === "bullet"
+        ? { bullet: { level: depth } }
+        : listKind === "ordered"
+          ? { numbering: { reference: "soweb-ordered", level: depth } }
+          : {}),
+    });
+
+  /** Collect a node's block-level content into `out`. */
+  const walk = (
+    node: TipTapNode,
+    out: Block[],
+    listKind?: "bullet" | "ordered",
+    depth = 0,
+    opts?: { color?: string },
+  ) => {
     switch (node.type) {
-      case "paragraph": {
-        const align = alignOf(node);
-        paragraphs.push(
-          new Paragraph({
-            children: runsOf(node),
-            alignment: align ? alignMap[align] : undefined,
-            ...(listKind === "bullet"
-              ? { bullet: { level: depth } }
-              : listKind === "ordered"
-                ? { numbering: { reference: "soweb-ordered", level: depth } }
-                : {}),
-          }),
-        );
+      case "paragraph":
+        out.push(paragraphFor(node, listKind, depth, opts));
         break;
-      }
-      case "heading": {
-        const align = alignOf(node);
-        paragraphs.push(
+      case "heading":
+        out.push(
           new Paragraph({
-            children: runsOf(node),
+            children: runsOf(node, opts),
             heading: headingFor(Number(node.attrs?.level ?? 1)),
-            alignment: align ? alignMap[align] : undefined,
+            alignment: alignOf(node) ? alignMap[alignOf(node)!] : undefined,
           }),
         );
         break;
-      }
       case "bulletList":
-        for (const item of node.content ?? []) walk(item, "bullet", depth);
+        for (const item of node.content ?? []) walk(item, out, "bullet", depth, opts);
         break;
       case "orderedList":
-        for (const item of node.content ?? []) walk(item, "ordered", depth);
+        for (const item of node.content ?? []) walk(item, out, "ordered", depth, opts);
         break;
       case "listItem":
-        for (const child of node.content ?? []) walk(child, listKind, depth);
-        break;
       case "blockquote":
-        for (const child of node.content ?? []) walk(child, listKind, depth);
+        for (const child of node.content ?? []) walk(child, out, listKind, depth, opts);
         break;
       case "horizontalRule":
-        paragraphs.push(new Paragraph({ text: "―――――――――――" }));
+        out.push(new Paragraph({ text: "―――――――――――" }));
+        break;
+      case "table":
+        out.push(tableFor(node));
         break;
       default:
-        for (const child of node.content ?? []) walk(child, listKind, depth);
+        for (const child of node.content ?? []) walk(child, out, listKind, depth, opts);
     }
   };
 
-  walk(doc);
+  const HEADER_FILL = "1F4E79";
+
+  const tableFor = (node: TipTapNode): InstanceType<typeof Table> => {
+    const rows = (node.content ?? []).map((rowNode) => {
+      const cells = (rowNode.content ?? []).map((cellNode) => {
+        const isHeader = cellNode.type === "tableHeader";
+        const inner: Block[] = [];
+        for (const child of cellNode.content ?? []) {
+          // Header text is white so it reads against the dark fill.
+          walk(child, inner, undefined, 0, isHeader ? { color: "FFFFFF" } : undefined);
+        }
+        if (inner.length === 0) inner.push(new Paragraph({ text: "" }));
+        return new TableCell({
+          children: inner,
+          columnSpan: Number(cellNode.attrs?.colspan ?? 1),
+          rowSpan: Number(cellNode.attrs?.rowspan ?? 1),
+          shading: isHeader ? { fill: HEADER_FILL } : undefined,
+        });
+      });
+      // Only set tableHeader when true: passing false still writes
+      // <w:tblHeader w:val="false"/>, and readers that only look for the
+      // element's presence then treat every row as a header row.
+      const isHeaderRow = rowNode.content?.[0]?.type === "tableHeader";
+      return new TableRow({ children: cells, ...(isHeaderRow ? { tableHeader: true } : {}) });
+    });
+
+    return new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } });
+  };
+
+  const paragraphs: Block[] = [];
+  walk(doc, paragraphs);
   if (paragraphs.length === 0) paragraphs.push(new Paragraph({ text: "" }));
 
   const file = new Document({

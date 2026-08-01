@@ -173,6 +173,68 @@
   outline: none;
 }
 
+/* Word-like tables: bordered grid with a dark shaded header row. */
+.content :global(.ProseMirror table) {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.8em 0;
+  overflow: hidden;
+}
+
+.content :global(.ProseMirror td),
+.content :global(.ProseMirror th) {
+  border: 1px solid #9bb0c9;
+  padding: 5px 8px;
+  vertical-align: top;
+  position: relative;
+  min-width: 60px;
+}
+
+.content :global(.ProseMirror th) {
+  background: #1f4e79;
+  color: #fff;
+  font-weight: 600;
+  text-align: left;
+}
+
+.content :global(.ProseMirror th p),
+.content :global(.ProseMirror td p) {
+  margin: 0;
+}
+
+/* Zebra striping mirrors the banded look of Word's default table styles. */
+.content :global(.ProseMirror tbody tr:nth-child(even)) {
+  background: #eef3f9;
+}
+
+.content :global(.ProseMirror .selectedCell::after) {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(47, 111, 237, 0.15);
+  pointer-events: none;
+}
+
+.content :global(.ProseMirror .column-resize-handle) {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #2f6fed;
+  pointer-events: none;
+}
+
+.colorSwatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid #bbb;
+  cursor: pointer;
+}
+
 .loading {
   padding: 24px;
   text-align: center;
