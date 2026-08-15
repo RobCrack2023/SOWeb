@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import Base, SessionLocal, engine
+from .database import Base, SessionLocal, engine, ensure_schema
 from .routers import files
 from .routers.files import get_or_create_desktop
 
 Base.metadata.create_all(bind=engine)
+ensure_schema()
 
 with SessionLocal() as _db:
     get_or_create_desktop(_db)

@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
+import { useState, type CSSProperties, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { InlineEditLabel } from "../ui/InlineEditLabel";
 import styles from "./DesktopIcon.module.css";
 
@@ -16,6 +16,7 @@ export function DesktopIcon({
   selected = false,
   selectionKey,
   onSelect,
+  style,
 }: {
   icon: string;
   label: string;
@@ -32,6 +33,7 @@ export function DesktopIcon({
   selected?: boolean;
   selectionKey?: string;
   onSelect?: (e: MouseEvent) => void;
+  style?: CSSProperties;
 }) {
   const [isOver, setIsOver] = useState(false);
   const canDrop = !!onDropItem;
@@ -49,6 +51,7 @@ export function DesktopIcon({
       role="button"
       tabIndex={0}
       data-icon-key={selectionKey}
+      style={style}
       draggable={draggable}
       onMouseDown={onSelect}
       onDragStart={onDragStart}

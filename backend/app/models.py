@@ -18,6 +18,8 @@ class Folder(Base):
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("folders.id"), nullable=True)
     is_desktop: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    pos_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pos_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     parent: Mapped["Folder | None"] = relationship(remote_side=[id], back_populates="children")
     children: Mapped[list["Folder"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
@@ -34,5 +36,7 @@ class FileEntry(Base):
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
     storage_path: Mapped[str] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    pos_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pos_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     folder: Mapped["Folder"] = relationship(back_populates="files")

@@ -11,6 +11,8 @@ class FolderCreate(BaseModel):
 class FolderRename(BaseModel):
     name: str | None = None
     parent_id: int | None = None
+    pos_x: int | None = None
+    pos_y: int | None = None
 
 
 class FolderOut(BaseModel):
@@ -20,6 +22,8 @@ class FolderOut(BaseModel):
     name: str
     parent_id: int | None
     created_at: datetime
+    pos_x: int | None
+    pos_y: int | None
     type: str = "folder"
 
 
@@ -32,12 +36,16 @@ class FileOut(BaseModel):
     size: int
     content_type: str | None
     created_at: datetime
+    pos_x: int | None
+    pos_y: int | None
     type: str = "file"
 
 
 class FileRename(BaseModel):
     name: str | None = None
     folder_id: int | None = None
+    pos_x: int | None = None
+    pos_y: int | None = None
 
 
 class FileCreate(BaseModel):

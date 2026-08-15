@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 DB_PATH = Path(__file__).resolve().parent.parent / "soweb.db"
@@ -18,3 +18,21 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_schema() -> None:
+    """create_all() only creates missing tables, not missing columns on
+    existing ones. Add any columns introduced after the table already
+    existed on disk (SQLite supports simple ADD COLUMN)."""
+    inspector = inspect(engine)
+    with engine.begin() as conn:
+        for table, columns in (
+            ("folders", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
+            ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
+        ):
+            if table not in inspector.get_table_names():
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for col, col_type in columns.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))

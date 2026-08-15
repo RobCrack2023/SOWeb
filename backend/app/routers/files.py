@@ -116,6 +116,10 @@ def update_folder(folder_id: int, payload: FolderRename, db: Session = Depends(g
                     detail="No se puede mover una carpeta dentro de sí misma o de una subcarpeta suya",
                 )
         folder.parent_id = new_parent_id
+    if "pos_x" in payload.model_fields_set:
+        folder.pos_x = payload.pos_x
+    if "pos_y" in payload.model_fields_set:
+        folder.pos_y = payload.pos_y
     db.commit()
     db.refresh(folder)
     return folder
@@ -235,6 +239,10 @@ def update_file(file_id: int, payload: FileRename, db: Session = Depends(get_db)
     if payload.folder_id is not None:
         _get_folder_or_404(db, payload.folder_id)
         entry.folder_id = payload.folder_id
+    if "pos_x" in payload.model_fields_set:
+        entry.pos_x = payload.pos_x
+    if "pos_y" in payload.model_fields_set:
+        entry.pos_y = payload.pos_y
     db.commit()
     db.refresh(entry)
     return entry

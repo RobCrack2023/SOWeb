@@ -2,10 +2,7 @@ import type { DragEvent } from "react";
 
 const DND_MIME = "application/x-soweb-item";
 
-export interface DndPayload {
-  kind: "folder" | "file";
-  id: number;
-}
+export type DndPayload = { kind: "folder" | "file"; id: number } | { kind: "app"; id: string };
 
 export function startDrag(e: DragEvent, payload: DndPayload) {
   e.dataTransfer.setData(DND_MIME, JSON.stringify(payload));

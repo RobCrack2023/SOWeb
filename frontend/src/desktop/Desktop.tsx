@@ -11,6 +11,15 @@ import { useExternalDrop } from "../lib/useExternalDrop";
 import { DropOverlay } from "../ui/DropOverlay";
 import { useFsStore } from "../lib/fsStore";
 import {
+  CELL_W,
+  cellKey,
+  loadAppPositions,
+  maxRows,
+  nextFreeCell,
+  saveAppPosition,
+  snapToGrid,
+} from "../lib/desktopLayout";
+import {
   appForFile,
   createFolder,
   deleteFile,
@@ -24,9 +33,12 @@ import {
   moveFolder,
   renameFile,
   renameFolder,
+  setFilePosition,
+  setFolderPosition,
   uploadFile,
   type FileOut,
   type FolderContents,
+  type IconPos,
 } from "../lib/filesApi";
 import styles from "./Desktop.module.css";
 
@@ -41,6 +53,11 @@ export function Desktop() {
   const [renaming, setRenaming] = useState<Renaming>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<Marquee>(null);
+  const [layout, setLayout] = useState<{
+    apps: Record<string, IconPos>;
+    folders: Record<number, IconPos>;
+    files: Record<number, IconPos>;
+  }>({ apps: {}, folders: {}, files: {} });
   const iconsRef = useRef<HTMLDivElement>(null);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const fsVersion = useFsStore((s) => s.version);
@@ -108,6 +125,62 @@ export function Desktop() {
   useEffect(() => {
     if (desktopId != null) load(desktopId);
   }, [desktopId, fsVersion, load]);
+
+  // Any icon without a saved position (new files, or the very first run) gets
+  // slotted into the next free grid cell and that position is persisted, so
+  // dragging is the only thing that ever moves it after that.
+  useEffect(() => {
+    if (!contents) return;
+    const rows = maxRows(window.innerHeight);
+    const occupied = new Set<string>();
+    const apps: Record<string, IconPos> = {};
+    const folders: Record<number, IconPos> = {};
+    const files: Record<number, IconPos> = {};
+    const savedAppPositions = loadAppPositions();
+
+    for (const app of APPS) {
+      const pos = savedAppPositions[app.id];
+      if (pos) {
+        apps[app.id] = pos;
+        occupied.add(cellKey(pos));
+      }
+    }
+    for (const folder of contents.folders) {
+      if (folder.pos_x != null && folder.pos_y != null) {
+        const pos = { x: folder.pos_x, y: folder.pos_y };
+        folders[folder.id] = pos;
+        occupied.add(cellKey(pos));
+      }
+    }
+    for (const file of contents.files) {
+      if (file.pos_x != null && file.pos_y != null) {
+        const pos = { x: file.pos_x, y: file.pos_y };
+        files[file.id] = pos;
+        occupied.add(cellKey(pos));
+      }
+    }
+
+    for (const app of APPS) {
+      if (apps[app.id]) continue;
+      const pos = nextFreeCell(occupied, rows);
+      apps[app.id] = pos;
+      saveAppPosition(app.id, pos);
+    }
+    for (const folder of contents.folders) {
+      if (folders[folder.id]) continue;
+      const pos = nextFreeCell(occupied, rows);
+      folders[folder.id] = pos;
+      setFolderPosition(folder.id, pos).catch(() => {});
+    }
+    for (const file of contents.files) {
+      if (files[file.id]) continue;
+      const pos = nextFreeCell(occupied, rows);
+      files[file.id] = pos;
+      setFilePosition(file.id, pos).catch(() => {});
+    }
+
+    setLayout({ apps, folders, files });
+  }, [contents]);
 
   const openFileExplorerAt = (folderId: number | null) => {
     openApp("file-explorer", {
@@ -190,25 +263,40 @@ export function Desktop() {
     deleteFile(id).then(notifyChange);
   };
 
-  const movePayloadInto = (payload: DndPayload | null, targetFolderId: number) => {
-    if (!payload || desktopId == null) return;
+  const movePayloadInto = (payload: DndPayload | null, targetFolderId: number, pos?: IconPos) => {
+    if (!payload || desktopId == null || payload.kind === "app") return;
     if (payload.kind === "folder") {
-      if (payload.id === targetFolderId) return;
-      moveFolder(payload.id, targetFolderId)
+      if (payload.id === targetFolderId && !pos) return;
+      moveFolder(payload.id, targetFolderId, pos)
         .then(notifyChange)
         .catch((err) => window.alert(String(err)));
     } else {
-      moveFile(payload.id, targetFolderId)
+      moveFile(payload.id, targetFolderId, pos)
         .then(notifyChange)
         .catch((err) => window.alert(String(err)));
     }
   };
 
+  /** A drop on empty desktop space: either a reposition, or a move onto the Desktop folder. */
   const handleDropOnDesktop = (e: DragEvent) => {
     if (extDrop.handleDrop(e, desktopId)) return;
     e.preventDefault();
+    const payload = readDrag(e);
+    if (!payload) return;
+    const pos = snapToGrid(e.clientX - CELL_W / 2, e.clientY - CELL_W / 2, window.innerWidth, window.innerHeight);
+
+    if (payload.kind === "app") {
+      saveAppPosition(payload.id, pos);
+      setLayout((prev) => ({ ...prev, apps: { ...prev.apps, [payload.id]: pos } }));
+      return;
+    }
     if (desktopId == null) return;
-    movePayloadInto(readDrag(e), desktopId);
+    setLayout((prev) =>
+      payload.kind === "folder"
+        ? { ...prev, folders: { ...prev.folders, [payload.id]: pos } }
+        : { ...prev, files: { ...prev.files, [payload.id]: pos } },
+    );
+    movePayloadInto(payload, desktopId, pos);
   };
 
   /** A drop landing on a folder icon: upload into it, or move the item into it. */
@@ -284,6 +372,8 @@ export function Desktop() {
       <div className={styles.icons} ref={iconsRef}>
         {APPS.map((app) => {
           const key = `app:${app.id}`;
+          const pos = layout.apps[app.id];
+          if (!pos) return null;
           return (
             <DesktopIcon
               key={app.id}
@@ -292,15 +382,20 @@ export function Desktop() {
               onOpen={() =>
                 openApp(app.id, { title: app.title, ...app.defaultSize, multiInstance: app.multiInstance })
               }
+              draggable
+              onDragStart={(e) => startDrag(e, { kind: "app", id: app.id })}
               selectionKey={key}
               selected={selected.has(key)}
               onSelect={(e) => selectIcon(key, e)}
+              style={{ left: pos.x, top: pos.y }}
             />
           );
         })}
 
         {contents?.folders.map((folder) => {
           const key = `folder:${folder.id}`;
+          const pos = layout.folders[folder.id];
+          if (!pos) return null;
           return (
             <DesktopIcon
               key={`folder-${folder.id}`}
@@ -317,12 +412,15 @@ export function Desktop() {
               selectionKey={key}
               selected={selected.has(key)}
               onSelect={(e) => selectIcon(key, e)}
+              style={{ left: pos.x, top: pos.y }}
             />
           );
         })}
 
         {contents?.files.map((file) => {
           const key = `file:${file.id}`;
+          const pos = layout.files[file.id];
+          if (!pos) return null;
           return (
             <DesktopIcon
               key={`file-${file.id}`}
@@ -338,6 +436,7 @@ export function Desktop() {
               selectionKey={key}
               selected={selected.has(key)}
               onSelect={(e) => selectIcon(key, e)}
+              style={{ left: pos.x, top: pos.y }}
             />
           );
         })}

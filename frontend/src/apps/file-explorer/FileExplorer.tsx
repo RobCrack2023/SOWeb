@@ -191,7 +191,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   };
 
   const movePayloadInto = (payload: DndPayload | null, targetFolderId: number | null) => {
-    if (!payload) return;
+    if (!payload || payload.kind === "app") return;
     if (payload.kind === "file" && targetFolderId == null) {
       window.alert("Los archivos no pueden estar sueltos en la raíz, movelos dentro de una carpeta.");
       return;

@@ -5,6 +5,8 @@ export interface FolderOut {
   name: string;
   parent_id: number | null;
   created_at: string;
+  pos_x: number | null;
+  pos_y: number | null;
   type: "folder";
 }
 
@@ -15,7 +17,15 @@ export interface FileOut {
   size: number;
   content_type: string | null;
   created_at: string;
+  pos_x: number | null;
+  pos_y: number | null;
   type: "file";
+}
+
+/** A free-form desktop icon position. */
+export interface IconPos {
+  x: number;
+  y: number;
 }
 
 export interface FolderContents {
@@ -182,19 +192,36 @@ export function renameFile(id: number, name: string): Promise<FileOut> {
   });
 }
 
-export function moveFolder(id: number, parentId: number | null): Promise<FolderOut> {
+export function moveFolder(id: number, parentId: number | null, pos?: IconPos): Promise<FolderOut> {
   return apiFetch<FolderOut>(`/folders/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ parent_id: parentId }),
+    body: JSON.stringify({ parent_id: parentId, ...(pos ? { pos_x: pos.x, pos_y: pos.y } : {}) }),
   });
 }
 
-export function moveFile(id: number, folderId: number): Promise<FileOut> {
+export function moveFile(id: number, folderId: number, pos?: IconPos): Promise<FileOut> {
   return apiFetch<FileOut>(`/files/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ folder_id: folderId }),
+    body: JSON.stringify({ folder_id: folderId, ...(pos ? { pos_x: pos.x, pos_y: pos.y } : {}) }),
+  });
+}
+
+/** Reposition a desktop icon without touching its parent folder. */
+export function setFolderPosition(id: number, pos: IconPos): Promise<FolderOut> {
+  return apiFetch<FolderOut>(`/folders/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pos_x: pos.x, pos_y: pos.y }),
+  });
+}
+
+export function setFilePosition(id: number, pos: IconPos): Promise<FileOut> {
+  return apiFetch<FileOut>(`/files/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pos_x: pos.x, pos_y: pos.y }),
   });
 }
 
