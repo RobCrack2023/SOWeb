@@ -41,6 +41,7 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
     <>
       {startOpen && (
         <StartMenu
+          user={user}
           onOpenApp={(appId) => {
             const app = getApp(appId);
             if (app)

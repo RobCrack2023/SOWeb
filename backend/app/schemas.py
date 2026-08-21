@@ -13,6 +13,7 @@ class UserOut(BaseModel):
 
     id: int
     username: str
+    is_admin: bool
 
 
 class LoginOut(BaseModel):
@@ -89,3 +90,62 @@ class FolderContents(BaseModel):
     breadcrumb: list[FolderOut]
     folders: list[FolderOut]
     files: list[FileOut]
+
+
+# --- Admin panel ---------------------------------------------------------
+
+
+class ActivityReport(BaseModel):
+    """An event the browser reports about itself (which app was opened)."""
+
+    action: str
+    detail: str | None = None
+
+
+class AdminOverview(BaseModel):
+    users: int
+    online: int
+    folders: int
+    files: int
+    storage_bytes: int
+    actions_today: int
+
+
+class AdminUser(BaseModel):
+    id: int
+    username: str
+    is_admin: bool
+    created_at: datetime
+    online: bool
+    last_seen: datetime | None
+    files: int
+    folders: int
+    storage_bytes: int
+
+
+class AdminSession(BaseModel):
+    user_id: int
+    username: str
+    started_at: datetime
+    last_seen: datetime
+    online: bool
+
+
+class AdminActivity(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    action: str
+    detail: str | None
+    created_at: datetime
+
+
+class AdminFile(BaseModel):
+    """A file listed for an admin: metadata only, never its contents."""
+
+    id: int
+    name: str
+    folder: str
+    size: int
+    content_type: str | None
+    created_at: datetime

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session as DbSession
 
+from .. import activity
 from ..auth import create_session, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Folder, Session, User
@@ -29,8 +30,14 @@ def register(payload: Credentials, db: DbSession = Depends(get_db)):
     if db.query(User).filter(User.username == username).first() is not None:
         raise HTTPException(status_code=409, detail="Ese usuario ya existe")
 
+    # The first account runs the place: it inherits the pre-auth files and gets
+    # the admin panel. Later accounts are ordinary users.
     is_first_user = db.query(User).count() == 0
-    user = User(username=username, password_hash=hash_password(payload.password))
+    user = User(
+        username=username,
+        password_hash=hash_password(payload.password),
+        is_admin=is_first_user,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -38,6 +45,9 @@ def register(payload: Credentials, db: DbSession = Depends(get_db)):
     if is_first_user:
         _adopt_legacy_content(db, user)
         db.commit()
+
+    activity.log(db, user.id, "user.register", username)
+    db.commit()
 
     # Every account gets its own desktop, so its files are private to it.
     if db.query(Folder).filter(Folder.owner_id == user.id, Folder.is_desktop.is_(True)).first() is None:
@@ -53,6 +63,8 @@ def login(payload: Credentials, db: DbSession = Depends(get_db)):
     # Same message either way: don't reveal which usernames exist.
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    activity.log(db, user.id, "login")
+    db.commit()
     return LoginOut(token=create_session(db, user), user=UserOut.model_validate(user))
 
 
@@ -64,6 +76,7 @@ def logout(
     if credentials is not None:
         session = db.get(Session, credentials.credentials)
         if session is not None:
+            activity.log(db, session.user_id, "logout")
             db.delete(session)
             db.commit()
 

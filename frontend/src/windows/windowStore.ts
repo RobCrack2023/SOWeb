@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { reportActivity } from "../lib/adminApi";
 
 export interface WindowInstance {
   id: string;
@@ -44,6 +45,10 @@ export const useWindowStore = create<WindowStoreState>((set, get) => ({
   nextZIndex: 1,
 
   openApp: (appId, { title, width = 720, height = 480, props, multiInstance }) => {
+    // Every route into an app funnels through here, so this is the one place
+    // that has to record app usage.
+    reportActivity("app.open", title);
+
     if (multiInstance) {
       const id = `${appId}-${Date.now()}`;
       const offset = cascadeOffset();

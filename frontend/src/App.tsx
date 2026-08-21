@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Desktop } from "./desktop/Desktop";
 import { LoginScreen } from "./auth/LoginScreen";
-import { fetchMe, getToken, type User } from "./lib/auth";
+import { fetchMe, getToken, heartbeat, type User } from "./lib/auth";
+
+/** Well inside the 5-minute window the backend uses to call a session online. */
+const HEARTBEAT_MS = 120000;
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -27,6 +30,13 @@ function App() {
       .then(setUser)
       .finally(() => setChecking(false));
   }, [checking]);
+
+  // Keep this session marked as connected for as long as SOWeb is open.
+  useEffect(() => {
+    if (!user) return;
+    const timer = setInterval(heartbeat, HEARTBEAT_MS);
+    return () => clearInterval(timer);
+  }, [user]);
 
   if (checking) return null;
   if (!user) return <LoginScreen onAuthenticated={setUser} />;

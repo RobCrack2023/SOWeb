@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { APPS, getApp } from "../apps/registry";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+} from "react";
+import { appsFor, getApp } from "../apps/registry";
 import { useWindowStore } from "../windows/windowStore";
 import { Window } from "../windows/Window";
 import { DesktopIcon } from "./DesktopIcon";
@@ -60,6 +68,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
     files: Record<number, IconPos>;
   }>({ apps: {}, folders: {}, files: {} });
   const iconsRef = useRef<HTMLDivElement>(null);
+  const visibleApps = useMemo(() => appsFor(user.is_admin), [user.is_admin]);
   const notifyChange = useFsStore((s) => s.notifyChange);
   const fsVersion = useFsStore((s) => s.version);
   const extDrop = useExternalDrop(() => notifyChange());
@@ -139,7 +148,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
     const files: Record<number, IconPos> = {};
     const savedAppPositions = loadAppPositions(user.id);
 
-    for (const app of APPS) {
+    for (const app of visibleApps) {
       const pos = savedAppPositions[app.id];
       if (pos) {
         apps[app.id] = pos;
@@ -161,7 +170,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
       }
     }
 
-    for (const app of APPS) {
+    for (const app of visibleApps) {
       if (apps[app.id]) continue;
       const pos = nextFreeCell(occupied, rows);
       apps[app.id] = pos;
@@ -181,7 +190,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
     }
 
     setLayout({ apps, folders, files });
-  }, [contents, user.id]);
+  }, [contents, user.id, visibleApps]);
 
   const openFileExplorerAt = (folderId: number | null) => {
     openApp("file-explorer", {
@@ -374,7 +383,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
       onDrop={handleDropOnDesktop}
     >
       <div className={styles.icons} ref={iconsRef}>
-        {APPS.map((app) => {
+        {visibleApps.map((app) => {
           const key = `app:${app.id}`;
           const pos = layout.apps[app.id];
           if (!pos) return null;

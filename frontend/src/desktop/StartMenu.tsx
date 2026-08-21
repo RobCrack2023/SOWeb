@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { APPS } from "../apps/registry";
+import { appsFor } from "../apps/registry";
+import type { User } from "../lib/auth";
 import styles from "./StartMenu.module.css";
 
-const USER_NAME = "Roberto";
-
 export function StartMenu({
+  user,
   onOpenApp,
   onClose,
 }: {
+  user: User;
   onOpenApp: (appId: string) => void;
   onClose: () => void;
 }) {
@@ -27,7 +28,9 @@ export function StartMenu({
     };
   }, [onClose]);
 
-  const filtered = APPS.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase()));
+  const filtered = appsFor(user.is_admin).filter((a) =>
+    a.title.toLowerCase().includes(query.trim().toLowerCase()),
+  );
 
   return (
     <div
@@ -67,8 +70,8 @@ export function StartMenu({
 
       <div className={styles.footer}>
         <div className={styles.user}>
-          <span className={styles.avatar}>{USER_NAME[0]}</span>
-          <span className={styles.userName}>{USER_NAME}</span>
+          <span className={styles.avatar}>{user.username[0]?.toUpperCase()}</span>
+          <span className={styles.userName}>{user.username}</span>
         </div>
         <button
           className={styles.power}

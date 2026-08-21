@@ -16,9 +16,13 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     sessions: Mapped[list["Session"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    activity: Mapped[list["Activity"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
 
@@ -31,8 +35,26 @@ class Session(Base):
     token: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # Refreshed as requests come in; this is what "connected right now" reads from.
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
+
+
+class Activity(Base):
+    """One recorded thing a user did, for the admin panel's usage view."""
+
+    __tablename__ = "activity"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # "login", "file.create", "file.upload", "app.open", …
+    action: Mapped[str] = mapped_column(String(32), index=True)
+    # Human-readable subject: a file name, an app title. Never file contents.
+    detail: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+    user: Mapped["User"] = relationship(back_populates="activity")
 
 
 class Folder(Base):

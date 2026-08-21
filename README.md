@@ -7,6 +7,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 ## Características
 
 - **Cuentas de usuario**: registro propio con usuario y contraseña, e inicio de sesión. **Cada cuenta tiene su propio Escritorio y sus propios archivos**, invisibles para las demás. Las contraseñas se guardan hasheadas (PBKDF2-SHA256) y la sesión usa un token revocable guardado en el servidor.
+- **Panel de administración** (🛡️, solo para cuentas admin): quién está conectado ahora, qué archivos creó cada usuario, cuánto espacio ocupa y un registro de actividad (inicios de sesión, archivos creados/guardados/subidos/eliminados, y qué apps se abren). Muestra únicamente metadatos: el admin no puede abrir ni descargar documentos de otras cuentas.
 - **Escritorio y gestor de ventanas**: iconos de escritorio, menú de inicio, barra de tareas, ventanas arrastrables y redimensionables (`react-rnd`), con el contenido recortado correctamente al marco de la ventana.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
 - **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
@@ -20,15 +21,19 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 ```
 SOWeb/
 ├── backend/           API REST (FastAPI + SQLAlchemy + SQLite)
+│   ├── manage.py      CLI: listar usuarios, promover/quitar admin
 │   └── app/
 │       ├── main.py        punto de entrada, CORS, montaje de routers
-│       ├── models.py      modelos ORM: User, Session, Folder, FileEntry
+│       ├── models.py      modelos ORM: User, Session, Activity, Folder, FileEntry
 │       ├── schemas.py     esquemas Pydantic
 │       ├── database.py    engine/sesión de SQLAlchemy + migración de columnas
-│       ├── auth.py        hashing de contraseñas y dependencia de sesión
+│       ├── auth.py        hashing de contraseñas y dependencias de sesión/admin
+│       ├── activity.py    registro de acciones para el panel de administración
 │       └── routers/
-│           ├── auth.py    registro, login, logout
-│           └── files.py   endpoints de carpetas y archivos (por usuario)
+│           ├── auth.py      registro, login, logout
+│           ├── files.py     endpoints de carpetas y archivos (por usuario)
+│           ├── activity.py  eventos que reporta el navegador (apps abiertas)
+│           └── admin.py     supervisión: usuarios, sesiones, actividad
 │
 └── frontend/           SPA (React 19 + TypeScript + Vite)
     └── src/
@@ -36,6 +41,7 @@ SOWeb/
         ├── desktop/        Desktop, DesktopIcon, StartMenu, Taskbar
         ├── windows/        Window (marco de ventana) y windowStore (zustand)
         ├── apps/
+        │   ├── admin/           Panel de administración
         │   ├── file-explorer/   Explorador de archivos
         │   ├── text-editor/     writeSO
         │   ├── spreadsheet/     spreadSO
@@ -100,6 +106,8 @@ Abrir [http://localhost:5173](http://localhost:5173). El backend debe estar corr
 
 La primera vez aparece la pantalla de acceso: usá "Registrate" para crear una cuenta (usuario de 3+ caracteres, contraseña de 6+) y entrás directo al escritorio. La sesión queda guardada en el navegador, así que recargar no vuelve a pedir la contraseña.
 
+La **primera cuenta que registres queda como administradora** y ve un icono extra 🛡️ Administración en el escritorio.
+
 ### Windows
 
 También hay un `run.bat` en la raíz para levantar el proyecto rápidamente en Windows.
@@ -115,7 +123,30 @@ También hay un `run.bat` en la raíz para levantar el proyecto rápidamente en 
 | POST | `/api/auth/logout` | Revocar el token actual |
 | GET | `/api/auth/me` | Datos del usuario conectado |
 
-La primera cuenta que se registre adopta el escritorio y los archivos que ya existieran de antes de agregar el login; las cuentas siguientes arrancan con un escritorio vacío.
+La primera cuenta que se registre adopta el escritorio y los archivos que ya existieran de antes de agregar el login, **y queda como administradora**; las cuentas siguientes arrancan con un escritorio vacío y sin permisos de admin.
+
+### Administración (`backend/app/routers/admin.py`)
+
+Requieren una cuenta admin; para el resto responden 403.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/admin/overview` | Totales: usuarios, conectados, archivos, espacio, acciones |
+| GET | `/api/admin/users` | Un renglón por usuario con sus estadísticas |
+| GET | `/api/admin/sessions` | Sesiones abiertas y cuál está activa |
+| GET | `/api/admin/activity` | Registro de acciones (opcional `?user_id=`) |
+| GET | `/api/admin/users/{user_id}/files` | Metadatos de los archivos de un usuario |
+| POST | `/api/activity` | El navegador reporta qué app abrió (no requiere admin) |
+
+Ninguno de estos endpoints devuelve el contenido de un archivo: un admin que pida `/api/files/{id}/content` de otra cuenta recibe 404 igual que cualquier usuario.
+
+#### Gestionar administradores
+
+```bash
+python manage.py list
+```
+
+`python manage.py promote <usuario>` y `python manage.py demote <usuario>` cambian el rol (se ejecutan dentro de `backend/`, con el entorno virtual activado). No permite quitar el último admin.
 
 ### Archivos (`backend/app/routers/files.py`)
 
@@ -141,5 +172,6 @@ Además: `GET /api/health` para chequeo de salud del servicio (no requiere sesi�
 ## Próximos pasos
 
 - Endurecer la autenticación: expiración de sesiones, cambio de contraseña, límite de intentos de login.
+- Panel de administración: cerrar sesiones de forma remota, dar de baja usuarios, filtrar el registro de actividad por fecha.
 - Más apps de escritorio.
 - Ejecución de `.exe`: emulación x86 en WASM (v86/WebVM) o streaming remoto de una VM Windows.

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from .. import activity
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import Folder, FileEntry, User
@@ -121,6 +122,7 @@ def create_folder(
 
     folder = Folder(name=payload.name, parent_id=payload.parent_id, owner_id=user.id)
     db.add(folder)
+    activity.log(db, user.id, "folder.create", payload.name)
     db.commit()
     db.refresh(folder)
     return folder
@@ -169,6 +171,7 @@ def delete_folder(
     for file in folder.files:
         blob = STORAGE_DIR / file.storage_path
         blob.unlink(missing_ok=True)
+    activity.log(db, user.id, "folder.delete", folder.name)
     db.delete(folder)
     db.commit()
 
@@ -195,6 +198,7 @@ def create_text_file(
         storage_path=stored_name,
     )
     db.add(entry)
+    activity.log(db, user.id, "file.create", payload.name)
     db.commit()
     db.refresh(entry)
     return entry
@@ -232,6 +236,7 @@ def update_file_content(
     data = payload.content.encode("utf-8")
     blob.write_bytes(data)
     entry.size = len(data)
+    activity.log(db, user.id, "file.save", entry.name)
     db.commit()
     db.refresh(entry)
     return entry
@@ -261,6 +266,7 @@ async def upload_file(
         storage_path=stored_name,
     )
     db.add(entry)
+    activity.log(db, user.id, "file.upload", file.filename)
     db.commit()
     db.refresh(entry)
     return entry
@@ -288,6 +294,10 @@ def update_file(
 ):
     entry = _get_file_or_404(db, file_id, user)
     if payload.name is not None:
+        # This endpoint also receives every icon drag, so only a real rename
+        # is worth an activity entry.
+        if payload.name != entry.name:
+            activity.log(db, user.id, "file.rename", f"{entry.name} → {payload.name}")
         entry.name = payload.name
     if payload.folder_id is not None:
         _get_folder_or_404(db, payload.folder_id, user)
@@ -310,5 +320,6 @@ def delete_file(
     entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     blob.unlink(missing_ok=True)
+    activity.log(db, user.id, "file.delete", entry.name)
     db.delete(entry)
     db.commit()

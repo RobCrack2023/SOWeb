@@ -4,6 +4,7 @@ import { TextEditor } from "./text-editor/TextEditor";
 import { SpreadSheet } from "./spreadsheet/SpreadSheet";
 import { ShowSO } from "./presentation/ShowSO";
 import { PdfSO } from "./pdf/PdfSO";
+import { AdminPanel } from "./admin/AdminPanel";
 
 export interface AppDefinition {
   id: string;
@@ -12,6 +13,8 @@ export interface AppDefinition {
   component: ComponentType<any>;
   defaultSize: { width: number; height: number };
   multiInstance?: boolean;
+  /** Hidden from the desktop and start menu for non-admin accounts. */
+  adminOnly?: boolean;
 }
 
 export const APPS: AppDefinition[] = [
@@ -54,6 +57,17 @@ export const APPS: AppDefinition[] = [
     defaultSize: { width: 1000, height: 680 },
     multiInstance: true,
   },
+  {
+    id: "admin",
+    title: "Administración",
+    icon: "🛡️",
+    component: AdminPanel,
+    defaultSize: { width: 900, height: 620 },
+    adminOnly: true,
+  },
 ];
 
 export const getApp = (appId: string) => APPS.find((a) => a.id === appId);
+
+/** The apps this account may see. */
+export const appsFor = (isAdmin: boolean) => APPS.filter((a) => !a.adminOnly || isAdmin);

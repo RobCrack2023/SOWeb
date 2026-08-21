@@ -3,6 +3,7 @@ import { API_BASE } from "./config";
 export interface User {
   id: number;
   username: string;
+  is_admin: boolean;
 }
 
 interface LoginResponse {
@@ -74,4 +75,13 @@ export async function fetchMe(): Promise<User | null> {
 /** Called when any API request comes back 401: the token is no longer good. */
 export function clearSession(): void {
   setToken(null);
+}
+
+/**
+ * Touch the session so the admin panel keeps showing this user as connected
+ * while SOWeb is open, even when they're only reading and not making requests.
+ */
+export function heartbeat(): void {
+  if (!token) return;
+  fetch(`${API_BASE}/auth/me`, { headers: authHeaders() }).catch(() => {});
 }

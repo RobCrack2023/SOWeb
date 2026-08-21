@@ -29,6 +29,8 @@ def ensure_schema() -> None:
         for table, columns in (
             ("folders", {"pos_x": "INTEGER", "pos_y": "INTEGER", "owner_id": "INTEGER"}),
             ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
+            ("users", {"is_admin": "BOOLEAN DEFAULT 0"}),
+            ("sessions", {"last_seen": "DATETIME"}),
         ):
             if table not in inspector.get_table_names():
                 continue

@@ -6,6 +6,7 @@ project stays dependency-free; the parameters below are the tunable part.
 
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -17,6 +18,12 @@ from .models import Session, User
 ALGORITHM = "pbkdf2_sha256"
 ITERATIONS = 480_000
 SALT_BYTES = 16
+
+# How stale last_seen may get before a request bothers to rewrite it. Without
+# this every single API call would issue a write.
+LAST_SEEN_REFRESH = timedelta(seconds=60)
+# How recently a session must have been used to count as "connected now".
+ONLINE_WINDOW = timedelta(minutes=5)
 
 # auto_error=False so a missing header produces our own 401 rather than a 403.
 _bearer = HTTPBearer(auto_error=False)
@@ -58,4 +65,16 @@ def get_current_user(
     session = db.get(Session, credentials.credentials)
     if session is None:
         raise HTTPException(status_code=401, detail="La sesión expiró o no es válida")
+
+    now = datetime.now(timezone.utc)
+    # Stored naive (SQLite), so compare against a naive "now".
+    if session.last_seen is None or now.replace(tzinfo=None) - session.last_seen > LAST_SEEN_REFRESH:
+        session.last_seen = now.replace(tzinfo=None)
+        db.commit()
     return session.user
+
+
+def get_admin_user(user: User = Depends(get_current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Necesitás permisos de administrador")
+    return user
