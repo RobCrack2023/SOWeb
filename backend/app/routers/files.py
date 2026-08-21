@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user
 from ..database import get_db
-from ..models import Folder, FileEntry
+from ..models import Folder, FileEntry, User
 from ..schemas import (
     FolderCreate,
     FolderRename,
@@ -34,11 +35,22 @@ def _breadcrumb(db: Session, folder: Folder | None) -> list[Folder]:
     return list(reversed(chain))
 
 
-def _get_folder_or_404(db: Session, folder_id: int) -> Folder:
+def _get_folder_or_404(db: Session, folder_id: int, user: User) -> Folder:
+    """Someone else's folder reads as missing rather than forbidden, so the API
+    never confirms that an id belongs to another account."""
     folder = db.get(Folder, folder_id)
-    if folder is None:
+    if folder is None or folder.owner_id != user.id:
         raise HTTPException(status_code=404, detail="Folder not found")
     return folder
+
+
+def _get_file_or_404(db: Session, file_id: int, user: User) -> FileEntry:
+    """Files have no owner column of their own — they inherit it from the
+    folder they live in."""
+    entry = db.get(FileEntry, file_id)
+    if entry is None or entry.folder is None or entry.folder.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="File not found")
+    return entry
 
 
 def _creates_cycle(db: Session, folder_id: int, new_parent_id: int) -> bool:
@@ -53,10 +65,14 @@ def _creates_cycle(db: Session, folder_id: int, new_parent_id: int) -> bool:
     return False
 
 
-def get_or_create_desktop(db: Session) -> Folder:
-    desktop = db.query(Folder).filter(Folder.is_desktop.is_(True)).first()
+def get_or_create_desktop(db: Session, user: User) -> Folder:
+    desktop = (
+        db.query(Folder)
+        .filter(Folder.owner_id == user.id, Folder.is_desktop.is_(True))
+        .first()
+    )
     if desktop is None:
-        desktop = Folder(name="Escritorio", parent_id=None, is_desktop=True)
+        desktop = Folder(name="Escritorio", parent_id=None, owner_id=user.id, is_desktop=True)
         db.add(desktop)
         db.commit()
         db.refresh(desktop)
@@ -64,17 +80,26 @@ def get_or_create_desktop(db: Session) -> Folder:
 
 
 @router.get("/folders/desktop-id")
-def get_desktop_id(db: Session = Depends(get_db)):
-    return {"id": get_or_create_desktop(db).id}
+def get_desktop_id(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return {"id": get_or_create_desktop(db, user).id}
 
 
 @router.get("/folders/contents", response_model=FolderContents)
-def get_contents(folder_id: int | None = None, db: Session = Depends(get_db)):
+def get_contents(
+    folder_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     folder = None
     if folder_id is not None:
-        folder = _get_folder_or_404(db, folder_id)
+        folder = _get_folder_or_404(db, folder_id, user)
 
-    subfolders = db.query(Folder).filter(Folder.parent_id == folder_id).order_by(Folder.name).all()
+    subfolders = (
+        db.query(Folder)
+        .filter(Folder.parent_id == folder_id, Folder.owner_id == user.id)
+        .order_by(Folder.name)
+        .all()
+    )
     files = db.query(FileEntry).filter(FileEntry.folder_id == folder_id).order_by(FileEntry.name).all() if folder_id is not None else []
 
     return FolderContents(
@@ -86,11 +111,15 @@ def get_contents(folder_id: int | None = None, db: Session = Depends(get_db)):
 
 
 @router.post("/folders", response_model=FolderOut)
-def create_folder(payload: FolderCreate, db: Session = Depends(get_db)):
+def create_folder(
+    payload: FolderCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     if payload.parent_id is not None:
-        _get_folder_or_404(db, payload.parent_id)
+        _get_folder_or_404(db, payload.parent_id, user)
 
-    folder = Folder(name=payload.name, parent_id=payload.parent_id)
+    folder = Folder(name=payload.name, parent_id=payload.parent_id, owner_id=user.id)
     db.add(folder)
     db.commit()
     db.refresh(folder)
@@ -98,8 +127,13 @@ def create_folder(payload: FolderCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/folders/{folder_id}", response_model=FolderOut)
-def update_folder(folder_id: int, payload: FolderRename, db: Session = Depends(get_db)):
-    folder = _get_folder_or_404(db, folder_id)
+def update_folder(
+    folder_id: int,
+    payload: FolderRename,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    folder = _get_folder_or_404(db, folder_id, user)
     if payload.name is not None:
         folder.name = payload.name
     # parent_id may be explicitly set to null (move to root), so check whether
@@ -109,7 +143,7 @@ def update_folder(folder_id: int, payload: FolderRename, db: Session = Depends(g
         if new_parent_id == folder_id:
             raise HTTPException(status_code=400, detail="Una carpeta no puede ser su propio padre")
         if new_parent_id is not None:
-            _get_folder_or_404(db, new_parent_id)
+            _get_folder_or_404(db, new_parent_id, user)
             if _creates_cycle(db, folder_id, new_parent_id):
                 raise HTTPException(
                     status_code=400,
@@ -126,8 +160,12 @@ def update_folder(folder_id: int, payload: FolderRename, db: Session = Depends(g
 
 
 @router.delete("/folders/{folder_id}", status_code=204)
-def delete_folder(folder_id: int, db: Session = Depends(get_db)):
-    folder = _get_folder_or_404(db, folder_id)
+def delete_folder(
+    folder_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    folder = _get_folder_or_404(db, folder_id, user)
     for file in folder.files:
         blob = STORAGE_DIR / file.storage_path
         blob.unlink(missing_ok=True)
@@ -136,8 +174,12 @@ def delete_folder(folder_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/files", response_model=FileOut)
-def create_text_file(payload: FileCreate, db: Session = Depends(get_db)):
-    _get_folder_or_404(db, payload.folder_id)
+def create_text_file(
+    payload: FileCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _get_folder_or_404(db, payload.folder_id, user)
 
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}_{payload.name}"
@@ -159,10 +201,12 @@ def create_text_file(payload: FileCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/files/{file_id}/content", response_model=FileContentOut)
-def get_file_content(file_id: int, db: Session = Depends(get_db)):
-    entry = db.get(FileEntry, file_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="File not found")
+def get_file_content(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     # Binary files (uploaded Office documents) are fetched via /download instead;
     # never fail here just because the bytes aren't valid UTF-8.
@@ -177,10 +221,13 @@ def get_file_content(file_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/files/{file_id}/content", response_model=FileOut)
-def update_file_content(file_id: int, payload: FileContentUpdate, db: Session = Depends(get_db)):
-    entry = db.get(FileEntry, file_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="File not found")
+def update_file_content(
+    file_id: int,
+    payload: FileContentUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     data = payload.content.encode("utf-8")
     blob.write_bytes(data)
@@ -195,8 +242,9 @@ async def upload_file(
     folder_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    _get_folder_or_404(db, folder_id)
+    _get_folder_or_404(db, folder_id, user)
 
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}_{file.filename}"
@@ -219,10 +267,12 @@ async def upload_file(
 
 
 @router.get("/files/{file_id}/download")
-def download_file(file_id: int, db: Session = Depends(get_db)):
-    entry = db.get(FileEntry, file_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="File not found")
+def download_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     if not blob.exists():
         raise HTTPException(status_code=404, detail="File blob missing")
@@ -230,14 +280,17 @@ def download_file(file_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/files/{file_id}", response_model=FileOut)
-def update_file(file_id: int, payload: FileRename, db: Session = Depends(get_db)):
-    entry = db.get(FileEntry, file_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="File not found")
+def update_file(
+    file_id: int,
+    payload: FileRename,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user)
     if payload.name is not None:
         entry.name = payload.name
     if payload.folder_id is not None:
-        _get_folder_or_404(db, payload.folder_id)
+        _get_folder_or_404(db, payload.folder_id, user)
         entry.folder_id = payload.folder_id
     if "pos_x" in payload.model_fields_set:
         entry.pos_x = payload.pos_x
@@ -249,10 +302,12 @@ def update_file(file_id: int, payload: FileRename, db: Session = Depends(get_db)
 
 
 @router.delete("/files/{file_id}", status_code=204)
-def delete_file(file_id: int, db: Session = Depends(get_db)):
-    entry = db.get(FileEntry, file_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail="File not found")
+def delete_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     blob.unlink(missing_ok=True)
     db.delete(entry)

@@ -1,4 +1,5 @@
 import { apiFetch, API_BASE } from "./api";
+import { authHeaders } from "./auth";
 
 export interface FolderOut {
   id: number;
@@ -141,9 +142,26 @@ export function iconForFile(file: FileLike): string {
 
 /** Fetch a file's raw bytes (used to feed Office importers). */
 export async function fetchFileBytes(id: number): Promise<ArrayBuffer> {
-  const res = await fetch(downloadUrl(id));
+  const res = await fetch(downloadUrl(id), { headers: authHeaders() });
   if (!res.ok) throw new Error(`No se pudo descargar el archivo (${res.status})`);
   return res.arrayBuffer();
+}
+
+/**
+ * Save a file to the real machine. The download URL needs an Authorization
+ * header now, which a plain `window.open` can't send, so fetch the bytes and
+ * hand them to the browser as a blob instead.
+ */
+export async function downloadToDisk(file: FileOut): Promise<void> {
+  const bytes = await fetchFileBytes(file.id);
+  const url = URL.createObjectURL(
+    new Blob([bytes], { type: file.content_type ?? "application/octet-stream" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /** Store a generated binary (an exported Office file) inside SOWeb. */

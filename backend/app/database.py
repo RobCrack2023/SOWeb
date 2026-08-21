@@ -27,7 +27,7 @@ def ensure_schema() -> None:
     inspector = inspect(engine)
     with engine.begin() as conn:
         for table, columns in (
-            ("folders", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
+            ("folders", {"pos_x": "INTEGER", "pos_y": "INTEGER", "owner_id": "INTEGER"}),
             ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
         ):
             if table not in inspector.get_table_names():

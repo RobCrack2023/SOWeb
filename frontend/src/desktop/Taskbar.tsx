@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useWindowStore } from "../windows/windowStore";
 import { getApp } from "../apps/registry";
+import { logout, type User } from "../lib/auth";
 import { StartMenu } from "./StartMenu";
 import styles from "./Taskbar.module.css";
 
@@ -24,11 +25,17 @@ function StartLogo() {
   );
 }
 
-export function Taskbar() {
+export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { windows, openApp, focusWindow, minimizeWindow } = useWindowStore();
   const now = useClock();
   const [startOpen, setStartOpen] = useState(false);
   const topZ = windows.length ? Math.max(...windows.map((x) => x.zIndex)) : 0;
+
+  const handleLogout = async () => {
+    if (!window.confirm("¿Cerrar sesión?")) return;
+    await logout();
+    onLogout();
+  };
 
   return (
     <>
@@ -75,6 +82,15 @@ export function Taskbar() {
               </button>
             );
           })}
+        </div>
+
+        <div className={styles.tray}>
+          <span className={styles.user} title={`Conectado como ${user.username}`}>
+            👤 {user.username}
+          </span>
+          <button className={styles.logout} onClick={handleLogout} title="Cerrar sesión">
+            ⏻
+          </button>
         </div>
 
         <div className={styles.clock}>

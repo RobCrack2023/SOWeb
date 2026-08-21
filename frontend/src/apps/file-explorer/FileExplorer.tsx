@@ -4,7 +4,7 @@ import {
   createFolder,
   deleteFile,
   deleteFolder,
-  downloadUrl,
+  downloadToDisk,
   getContents,
   iconForFile,
   officeKind,
@@ -68,7 +68,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   const openFileItem = (file: FileOut) => {
     const appId = appForFile(file);
     if (!appId) {
-      window.open(downloadUrl(file.id), "_blank");
+      downloadToDisk(file).catch((err) => window.alert(String(err)));
       return;
     }
     const kind = officeKind(file);
@@ -255,7 +255,10 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
         ...(appForFile(file)
           ? [{ label: "📂 Abrir", onClick: () => openFileItem(file) }]
           : []),
-        { label: "⬇ Descargar", onClick: () => window.open(downloadUrl(file.id), "_blank") },
+        {
+          label: "⬇ Descargar",
+          onClick: () => downloadToDisk(file).catch((err) => window.alert(String(err))),
+        },
         { label: "✏️ Renombrar", onClick: () => setRenaming({ type: "file", id: file.id }) },
         { label: "🗑️ Eliminar", onClick: () => handleDeleteFile(file.id), danger: true },
       ],

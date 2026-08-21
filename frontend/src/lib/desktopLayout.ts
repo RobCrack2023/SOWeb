@@ -45,22 +45,24 @@ export function snapToGrid(x: number, y: number, viewportW: number, viewportH: n
   return posOfCell(col, row);
 }
 
-const APP_POS_KEY = "soweb.desktop.appPositions";
+/** App shortcuts aren't backend rows, so their positions live in the browser —
+ *  keyed per user so two accounts on one machine don't inherit each other's. */
+const appPosKey = (userId: number) => `soweb.desktop.appPositions.${userId}`;
 
-export function loadAppPositions(): Record<string, IconPos> {
+export function loadAppPositions(userId: number): Record<string, IconPos> {
   try {
-    const raw = localStorage.getItem(APP_POS_KEY);
+    const raw = localStorage.getItem(appPosKey(userId));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-export function saveAppPosition(appId: string, pos: IconPos): void {
-  const all = loadAppPositions();
+export function saveAppPosition(userId: number, appId: string, pos: IconPos): void {
+  const all = loadAppPositions(userId);
   all[appId] = pos;
   try {
-    localStorage.setItem(APP_POS_KEY, JSON.stringify(all));
+    localStorage.setItem(appPosKey(userId), JSON.stringify(all));
   } catch {
     // Storage full or unavailable — the position just won't survive a reload.
   }

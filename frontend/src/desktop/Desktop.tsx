@@ -8,6 +8,7 @@ import { ContextMenu, type ContextMenuState } from "../ui/ContextMenu";
 import { nextFolderName } from "../lib/names";
 import { startDrag, readDrag, type DndPayload } from "../lib/dnd";
 import { useExternalDrop } from "../lib/useExternalDrop";
+import type { User } from "../lib/auth";
 import { DropOverlay } from "../ui/DropOverlay";
 import { useFsStore } from "../lib/fsStore";
 import {
@@ -24,7 +25,7 @@ import {
   createFolder,
   deleteFile,
   deleteFolder,
-  downloadUrl,
+  downloadToDisk,
   getContents,
   getDesktopId,
   iconForFile,
@@ -45,7 +46,7 @@ import styles from "./Desktop.module.css";
 type Renaming = { type: "folder" | "file"; id: number } | null;
 type Marquee = { x: number; y: number; w: number; h: number } | null;
 
-export function Desktop() {
+export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { windows, openApp } = useWindowStore();
   const [desktopId, setDesktopId] = useState<number | null>(null);
   const [contents, setContents] = useState<FolderContents | null>(null);
@@ -136,7 +137,7 @@ export function Desktop() {
     const apps: Record<string, IconPos> = {};
     const folders: Record<number, IconPos> = {};
     const files: Record<number, IconPos> = {};
-    const savedAppPositions = loadAppPositions();
+    const savedAppPositions = loadAppPositions(user.id);
 
     for (const app of APPS) {
       const pos = savedAppPositions[app.id];
@@ -164,7 +165,7 @@ export function Desktop() {
       if (apps[app.id]) continue;
       const pos = nextFreeCell(occupied, rows);
       apps[app.id] = pos;
-      saveAppPosition(app.id, pos);
+      saveAppPosition(user.id, app.id, pos);
     }
     for (const folder of contents.folders) {
       if (folders[folder.id]) continue;
@@ -180,7 +181,7 @@ export function Desktop() {
     }
 
     setLayout({ apps, folders, files });
-  }, [contents]);
+  }, [contents, user.id]);
 
   const openFileExplorerAt = (folderId: number | null) => {
     openApp("file-explorer", {
@@ -194,7 +195,7 @@ export function Desktop() {
   const openFile = (file: FileOut) => {
     const appId = appForFile(file);
     if (!appId) {
-      window.open(downloadUrl(file.id), "_blank");
+      downloadToDisk(file).catch((err) => window.alert(String(err)));
       return;
     }
     const kind = officeKind(file);
@@ -286,7 +287,7 @@ export function Desktop() {
     const pos = snapToGrid(e.clientX - CELL_W / 2, e.clientY - CELL_W / 2, window.innerWidth, window.innerHeight);
 
     if (payload.kind === "app") {
-      saveAppPosition(payload.id, pos);
+      saveAppPosition(user.id, payload.id, pos);
       setLayout((prev) => ({ ...prev, apps: { ...prev.apps, [payload.id]: pos } }));
       return;
     }
@@ -352,7 +353,10 @@ export function Desktop() {
         ...(appForFile(file)
           ? [{ label: "📂 Abrir", onClick: () => openFile(file) }]
           : []),
-        { label: "⬇ Descargar", onClick: () => window.open(downloadUrl(file.id), "_blank") },
+        {
+          label: "⬇ Descargar",
+          onClick: () => downloadToDisk(file).catch((err) => window.alert(String(err))),
+        },
         { label: "✏️ Renombrar", onClick: () => setRenaming({ type: "file", id: file.id }) },
         { label: "🗑️ Eliminar", onClick: () => handleDeleteFile(file.id), danger: true },
       ],
@@ -455,7 +459,7 @@ export function Desktop() {
         ))}
       </div>
 
-      <Taskbar />
+      <Taskbar user={user} onLogout={onLogout} />
 
       <DropOverlay
         visible={extDrop.dragging}

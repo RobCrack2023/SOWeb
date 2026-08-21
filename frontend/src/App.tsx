@@ -1,7 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Desktop } from "./desktop/Desktop";
+import { LoginScreen } from "./auth/LoginScreen";
+import { fetchMe, getToken, type User } from "./lib/auth";
 
 function App() {
+  const [user, setUser] = useState<User | null>(null);
+  // Start out checking only if there's a stored token worth validating.
+  const [checking, setChecking] = useState(() => getToken() != null);
+
   // Without this, dropping a file anywhere outside a registered drop zone makes
   // the browser navigate to it, throwing the user out of SOWeb entirely.
   useEffect(() => {
@@ -14,7 +20,17 @@ function App() {
     };
   }, []);
 
-  return <Desktop />;
+  // Resume a previous session so a reload doesn't ask for the password again.
+  useEffect(() => {
+    if (!checking) return;
+    fetchMe()
+      .then(setUser)
+      .finally(() => setChecking(false));
+  }, [checking]);
+
+  if (checking) return null;
+  if (!user) return <LoginScreen onAuthenticated={setUser} />;
+  return <Desktop user={user} onLogout={() => setUser(null)} />;
 }
 
 export default App;

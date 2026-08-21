@@ -111,6 +111,49 @@
   white-space: nowrap;
 }
 
+/* Sits just left of the clock, which is anchored to the right edge. */
+.tray {
+  position: absolute;
+  right: 108px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.user {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #f0f0f0;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.user:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  color: #f0f0f0;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.logout:hover {
+  background: rgba(232, 60, 60, 0.75);
+}
+
 .clock {
   position: absolute;
   right: 12px;
