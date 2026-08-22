@@ -7,26 +7,38 @@
  */
 
 import { XLSX_MIME } from "../filesApi";
-import type { Cells } from "../../apps/spreadsheet/formula";
+import type { Cells, Sheet } from "../../apps/spreadsheet/formula";
+import { blankWorkbook, makeSheet, sanitizeSheetName, uniqueSheetName } from "../../apps/spreadsheet/workbook";
 
-/** Read the first worksheet of a workbook into spreadSO cells. */
-export async function importXlsx(bytes: ArrayBuffer): Promise<Cells> {
+/** Read every worksheet of a workbook, in the order Excel shows its tabs. */
+export async function importXlsx(bytes: ArrayBuffer): Promise<Sheet[]> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(bytes);
 
-  const ws = wb.worksheets[0];
-  const cells: Cells = {};
-  if (!ws) return cells;
+  const sheets: Sheet[] = [];
+  for (const ws of wb.worksheets) {
+    // Excel keeps hidden sheets in the file; importing them would show tabs
+    // the user never seeded in Excel.
+    if (ws.state === "hidden" || ws.state === "veryHidden") continue;
 
-  ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-      const ref = `${columnLetter(colNumber)}${rowNumber}`;
-      const raw = readCell(cell);
-      if (raw !== "") cells[ref] = raw;
+    const cells: Cells = {};
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+        const ref = `${columnLetter(colNumber)}${rowNumber}`;
+        const raw = readCell(cell);
+        if (raw !== "") cells[ref] = raw;
+      });
     });
-  });
-  return cells;
+
+    const name = uniqueSheetName(
+      sheets.map((s) => s.name),
+      sanitizeSheetName(ws.name),
+    );
+    sheets.push(makeSheet(name, cells));
+  }
+
+  return sheets.length ? sheets : blankWorkbook();
 }
 
 function columnLetter(index: number): string {
@@ -64,23 +76,24 @@ function readCell(cell: { value: unknown; formula?: string }): string {
   return "";
 }
 
-/** Write spreadSO cells out as a real .xlsx, preserving formulas. */
-export async function exportXlsx(cells: Cells, sheetName: string): Promise<Blob> {
+/** Write a whole workbook out as a real .xlsx, one tab per sheet. */
+export async function exportXlsx(sheets: Sheet[]): Promise<Blob> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = "SOWeb — spreadSO";
   wb.created = new Date();
-  // Excel rejects these characters in sheet names.
-  const ws = wb.addWorksheet(sheetName.replace(/[\\/*?:[\]]/g, "").slice(0, 31) || "Hoja1");
 
-  for (const [ref, raw] of Object.entries(cells)) {
-    if (raw === "") continue;
-    const cell = ws.getCell(ref);
-    if (raw.startsWith("=")) {
-      cell.value = { formula: raw.slice(1) };
-    } else {
-      const n = Number(raw);
-      cell.value = raw.trim() !== "" && !Number.isNaN(n) ? n : raw;
+  for (const sheet of sheets) {
+    const ws = wb.addWorksheet(sanitizeSheetName(sheet.name) || "Hoja1");
+    for (const [ref, raw] of Object.entries(sheet.cells)) {
+      if (raw === "") continue;
+      const cell = ws.getCell(ref);
+      if (raw.startsWith("=")) {
+        cell.value = { formula: raw.slice(1) };
+      } else {
+        const n = Number(raw);
+        cell.value = raw.trim() !== "" && !Number.isNaN(n) ? n : raw;
+      }
     }
   }
 

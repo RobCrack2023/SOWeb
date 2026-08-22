@@ -15,7 +15,17 @@ import { ensureExt, withExt } from "../../lib/names";
 import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
-import { cellRef, computeAll, displayValue, indexToCol, parseRef, type Cells } from "./formula";
+import { cellRef, computeWorkbook, displayValue, indexToCol, parseRef, type Sheet } from "./formula";
+import {
+  blankWorkbook,
+  makeSheet,
+  nextSheetName,
+  parseDocument,
+  sanitizeSheetName,
+  serializeDocument,
+  uniqueSheetName,
+} from "./workbook";
+import { SheetTabs } from "./SheetTabs";
 import styles from "./SpreadSheet.module.css";
 
 const COLS = 26;
@@ -42,7 +52,8 @@ export function SpreadSheet({
   const [fileId, setFileId] = useState<number | undefined>(initialFileId);
   const [folderId, setFolderId] = useState<number | undefined>(initialFolderId);
   const [name, setName] = useState(FALLBACK_NAME);
-  const [cells, setCells] = useState<Cells>({});
+  const [sheets, setSheets] = useState<Sheet[]>(blankWorkbook);
+  const [activeId, setActiveId] = useState<string>(() => "");
   const [selected, setSelected] = useState("A1");
   const [editing, setEditing] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -53,16 +64,31 @@ export function SpreadSheet({
   const desktopIdRef = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const computed = useMemo(() => computeAll(cells), [cells]);
+  // The whole workbook is evaluated together so formulas can cross sheets.
+  const computedBySheet = useMemo(() => computeWorkbook(sheets), [sheets]);
+  const active = sheets.find((s) => s.id === activeId) ?? sheets[0];
+  const cells = active?.cells ?? {};
+  const computed = computedBySheet.get(active?.id ?? "") ?? new Map();
+
+  /** Replace the active sheet's cells, leaving the other tabs untouched. */
+  const updateActiveCells = (mutate: (cells: Sheet["cells"]) => Sheet["cells"]) => {
+    setSheets((prev) =>
+      prev.map((s) => (s.id === active?.id ? { ...s, cells: mutate(s.cells) } : s)),
+    );
+    setDirty(true);
+  };
+
+  const loadSheets = (loaded: Sheet[]) => {
+    setSheets(loaded);
+    setActiveId(loaded[0]?.id ?? "");
+    setSelected("A1");
+    setEditing(null);
+  };
 
   useEffect(() => {
     if (initialFileId == null) return;
     getFileContent(initialFileId).then((doc) => {
-      try {
-        setCells(JSON.parse(doc.content || "{}"));
-      } catch {
-        setCells({});
-      }
+      loadSheets(parseDocument(doc.content));
       setName(doc.name);
       setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
@@ -80,7 +106,7 @@ export function SpreadSheet({
         return importXlsx(bytes);
       })
       .then((imported) => {
-        setCells(imported);
+        loadSheets(imported);
         setName(withExt(importFrom.name, SHEET_EXT));
         setFolderId(importFrom.folderId);
         setFileId(undefined);
@@ -100,13 +126,12 @@ export function SpreadSheet({
   }, [windowId, name, dirty, setTitle]);
 
   const commitCell = (ref: string, raw: string) => {
-    setCells((prev) => {
+    updateActiveCells((prev) => {
       const next = { ...prev };
       if (raw.trim() === "") delete next[ref];
       else next[ref] = raw;
       return next;
     });
-    setDirty(true);
   };
 
   const startEdit = (ref: string, initial?: string) => {
@@ -181,13 +206,60 @@ export function SpreadSheet({
     }
   };
 
+  const addSheet = () => {
+    const sheet = makeSheet(nextSheetName(sheets.map((s) => s.name)));
+    setSheets((prev) => [...prev, sheet]);
+    setActiveId(sheet.id);
+    setSelected("A1");
+    setEditing(null);
+    setDirty(true);
+  };
+
+  const renameSheet = (id: string, raw: string) => {
+    const clean = sanitizeSheetName(raw);
+    const current = sheets.find((s) => s.id === id);
+    if (!current || !clean || clean === current.name) return;
+    const others = sheets.filter((s) => s.id !== id).map((s) => s.name);
+    const finalName = uniqueSheetName(others, clean);
+    setSheets((prev) => prev.map((s) => (s.id === id ? { ...s, name: finalName } : s)));
+    setDirty(true);
+  };
+
+  const deleteSheet = (id: string) => {
+    if (sheets.length === 1) {
+      window.alert("Un libro necesita al menos una hoja.");
+      return;
+    }
+    const sheet = sheets.find((s) => s.id === id);
+    if (!sheet) return;
+    const hasContent = Object.keys(sheet.cells).length > 0;
+    if (hasContent && !window.confirm(`¿Eliminar la hoja "${sheet.name}" y su contenido?`)) return;
+
+    const index = sheets.findIndex((s) => s.id === id);
+    const remaining = sheets.filter((s) => s.id !== id);
+    setSheets(remaining);
+    if (activeId === id) {
+      setActiveId(remaining[Math.max(0, index - 1)].id);
+      setSelected("A1");
+      setEditing(null);
+    }
+    setDirty(true);
+  };
+
+  const selectSheet = (id: string) => {
+    if (id === activeId) return;
+    finishEdit();
+    setActiveId(id);
+    setSelected("A1");
+  };
+
   const importFromDisk = async () => {
     const file = await pickLocalFile(".xlsx");
     if (!file) return;
     setBusy("Importando libro de Excel…");
     try {
       const { importXlsx } = await import("../../lib/office/xlsxIO");
-      setCells(await importXlsx(await file.arrayBuffer()));
+      loadSheets(await importXlsx(await file.arrayBuffer()));
       setName(withExt(file.name, SHEET_EXT));
       setFileId(undefined);
       savedNameRef.current = null;
@@ -206,7 +278,7 @@ export function SpreadSheet({
     try {
       const { exportXlsx } = await import("../../lib/office/xlsxIO");
       const xlsxName = withExt(name, ".xlsx");
-      const blob = await exportXlsx(cells, withExt(name, ""));
+      const blob = await exportXlsx(sheets);
       await uploadBlob(target, xlsxName, blob);
       notifyChange();
       window.alert(`Exportado como ${xlsxName}`);
@@ -221,7 +293,7 @@ export function SpreadSheet({
     if (saving) return;
     setSaving(true);
     try {
-      const content = JSON.stringify(cells);
+      const content = serializeDocument(sheets);
       if (fileId == null) {
         const target = folderId ?? desktopIdRef.current;
         if (target == null) return;
@@ -280,7 +352,9 @@ export function SpreadSheet({
       {busy && <div className={styles.busyBar}>{busy}</div>}
 
       <div className={styles.formulaBar}>
-        <span className={styles.cellName}>{selected}</span>
+        <span className={styles.cellName} title={`Hoja: ${active?.name ?? ""}`}>
+          {selected}
+        </span>
         <span className={styles.fx}>fx</span>
         <input
           className={styles.formulaInput}
@@ -358,6 +432,15 @@ export function SpreadSheet({
           </tbody>
         </table>
       </div>
+
+      <SheetTabs
+        sheets={sheets}
+        activeId={active?.id ?? ""}
+        onSelect={selectSheet}
+        onAdd={addSheet}
+        onRename={renameSheet}
+        onDelete={deleteSheet}
+      />
     </div>
   );
 }

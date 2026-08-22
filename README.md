@@ -11,7 +11,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **Escritorio y gestor de ventanas**: iconos de escritorio, menú de inicio, barra de tareas, ventanas arrastrables y redimensionables (`react-rnd`), con el contenido recortado correctamente al marco de la ventana.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
 - **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
-- **spreadSO** — hoja de cálculo con motor de fórmulas propio; importa/exporta `.xlsx` (vía `exceljs`).
+- **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); importa/exporta `.xlsx` conservando todas las hojas y sus fórmulas (vía `exceljs`).
 - **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
 - **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
 - **pdfSO** — visor y editor de PDF: edición de texto sobre el PDF que conserva la posición y apariencia original del texto reemplazado (vía `pdf-lib` + `pdfjs-dist`).

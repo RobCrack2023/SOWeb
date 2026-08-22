@@ -5,16 +5,25 @@
  * A raw value starting with "=" is a formula; otherwise it's a literal
  * (number if it parses, else text).
  *
- * Supported in formulas: numbers, cell refs (A1), ranges (A1:B3, only as
- * function arguments), operators + - * / and parentheses, and the functions
- * SUM, AVERAGE, MIN, MAX, COUNT.
+ * Supported in formulas: numbers, cell refs (A1), refs into another sheet
+ * (Hoja2!A1, or 'Mi hoja'!A1 when the name has spaces), ranges (A1:B3, only
+ * as function arguments), operators + - * / and parentheses, and the
+ * functions SUM, AVERAGE, MIN, MAX, COUNT.
  */
 
 export type CellValue = number | string;
 export type Cells = Record<string, string>;
 
+/** One tab of a workbook. `id` stays stable while the name is edited. */
+export interface Sheet {
+  id: string;
+  name: string;
+  cells: Cells;
+}
+
 const ERR_CYCLE = "#CICLO";
 const ERR = "#ERROR";
+const ERR_REF = "#REF";
 
 // ---- ref helpers -----------------------------------------------------------
 
@@ -64,7 +73,8 @@ function expandRange(a: string, b: string): string[] {
 
 type Token =
   | { t: "num"; v: number }
-  | { t: "ref"; v: string }
+  /** `sheet` is set only when the ref was written as Sheet!A1. */
+  | { t: "ref"; v: string; sheet?: string }
   | { t: "ident"; v: string }
   | { t: "op"; v: string }
   | { t: "lparen" }
@@ -79,6 +89,23 @@ function tokenize(src: string): Token[] {
     const ch = src[i];
     if (ch === " " || ch === "\t") {
       i += 1;
+      continue;
+    }
+    // A quoted sheet name: 'Mi hoja'!A1
+    if (ch === "'") {
+      let j = i + 1;
+      let sheet = "";
+      while (j < src.length && src[j] !== "'") sheet += src[j++];
+      if (src[j] !== "'") throw new Error("Unterminated sheet name");
+      j += 1;
+      if (src[j] !== "!") throw new Error("Expected ! after sheet name");
+      j += 1;
+      let ref = "";
+      while (j < src.length && /[A-Za-z0-9$]/.test(src[j])) ref += src[j++];
+      const upper = ref.replace(/\$/g, "").toUpperCase();
+      if (!/^[A-Z]+\d+$/.test(upper)) throw new Error("Bad sheet reference");
+      tokens.push({ t: "ref", v: upper, sheet });
+      i = j;
       continue;
     }
     if ("+-*/".includes(ch)) {
@@ -100,14 +127,27 @@ function tokenize(src: string): Token[] {
       let num = "";
       while (i < src.length && /[0-9.]/.test(src[i])) num += src[i++];
       tokens.push({ t: "num", v: parseFloat(num) });
-    } else if (/[A-Za-z]/.test(ch)) {
+    } else if (/[A-Za-z_]/.test(ch)) {
       let word = "";
-      while (i < src.length && /[A-Za-z0-9]/.test(src[i])) word += src[i++];
+      while (i < src.length && /[A-Za-z0-9_.]/.test(src[i])) word += src[i++];
+      // An unquoted sheet qualifier: Hoja2!A1
+      if (src[i] === "!") {
+        i += 1;
+        let ref = "";
+        while (i < src.length && /[A-Za-z0-9$]/.test(src[i])) ref += src[i++];
+        const upperRef = ref.replace(/\$/g, "").toUpperCase();
+        if (!/^[A-Z]+\d+$/.test(upperRef)) throw new Error("Bad sheet reference");
+        tokens.push({ t: "ref", v: upperRef, sheet: word });
+        continue;
+      }
       const upper = word.toUpperCase();
       // A cell ref looks like letters followed by digits (A1); otherwise it's
       // a function name.
       if (/^[A-Z]+\d+$/.test(upper)) tokens.push({ t: "ref", v: upper });
       else tokens.push({ t: "ident", v: upper });
+    } else if (ch === "$") {
+      // Absolute markers carry no meaning here; refs never move.
+      i += 1;
     } else {
       throw new Error(`Unexpected char: ${ch}`);
     }
@@ -117,7 +157,8 @@ function tokenize(src: string): Token[] {
 
 // ---- parser / evaluator ----------------------------------------------------
 
-type Resolve = (ref: string) => CellValue;
+/** Looks a cell up; `sheet` is null when the formula didn't qualify the ref. */
+type Resolve = (sheet: string | null, ref: string) => CellValue;
 
 function toNumber(v: CellValue): number {
   if (typeof v === "number") return v;
@@ -161,11 +202,13 @@ function evalFormula(src: string, resolve: Resolve): CellValue {
     if (peek()?.t === "rparen") return values;
     for (;;) {
       if (peek()?.t === "ref" && tokens[pos + 1]?.t === "colon") {
-        const a = (next() as { v: string }).v;
+        const start = next() as { v: string; sheet?: string };
         next(); // colon
-        const b = (next() as { v: string }).v;
-        for (const ref of expandRange(a, b)) {
-          const v = resolve(ref);
+        const end = next() as { v: string; sheet?: string };
+        // Excel writes Hoja2!A1:B3 — the qualifier on the left covers both ends.
+        const sheet = start.sheet ?? end.sheet ?? null;
+        for (const ref of expandRange(start.v, end.v)) {
+          const v = resolve(sheet, ref);
           if (typeof v === "number") values.push(v);
           else if (v !== "" && !Number.isNaN(Number(v))) values.push(Number(v));
         }
@@ -231,7 +274,7 @@ function evalFormula(src: string, resolve: Resolve): CellValue {
     }
     if (tok.t === "ref") {
       next();
-      return toNumber(resolve(tok.v));
+      return toNumber(resolve(tok.sheet ?? null, tok.v));
     }
     throw new Error("Unexpected token");
   }
@@ -243,38 +286,61 @@ function evalFormula(src: string, resolve: Resolve): CellValue {
 
 // ---- whole-grid evaluation -------------------------------------------------
 
-export function computeAll(cells: Cells): Map<string, CellValue> {
+/**
+ * Evaluate every sheet at once.
+ *
+ * The whole workbook is done in one pass, keyed by "sheet!ref", so a formula
+ * can reach into another tab and a cycle spanning two sheets is still caught.
+ * Returns one value map per sheet id.
+ */
+export function computeWorkbook(sheets: Sheet[]): Map<string, Map<string, CellValue>> {
   const cache = new Map<string, CellValue>();
   const visiting = new Set<string>();
+  // Excel treats sheet names case-insensitively in references.
+  const byName = new Map(sheets.map((s) => [s.name.toLowerCase(), s]));
 
-  function evalRef(ref: string): CellValue {
-    if (cache.has(ref)) return cache.get(ref)!;
-    const raw = cells[ref];
+  function evalIn(sheet: Sheet, ref: string): CellValue {
+    const key = `${sheet.id}!${ref}`;
+    if (cache.has(key)) return cache.get(key)!;
+
+    const raw = sheet.cells[ref];
     if (raw == null || raw === "") {
-      cache.set(ref, "");
+      cache.set(key, "");
       return "";
     }
     if (!raw.startsWith("=")) {
       const n = Number(raw);
       const v: CellValue = raw.trim() !== "" && !Number.isNaN(n) ? n : raw;
-      cache.set(ref, v);
+      cache.set(key, v);
       return v;
     }
-    if (visiting.has(ref)) return ERR_CYCLE;
-    visiting.add(ref);
+    if (visiting.has(key)) return ERR_CYCLE;
+    visiting.add(key);
     let v: CellValue;
     try {
-      v = evalFormula(raw.slice(1), evalRef);
+      v = evalFormula(raw.slice(1), (sheetName, target) => {
+        if (sheetName == null) return evalIn(sheet, target);
+        const other = byName.get(sheetName.toLowerCase());
+        // A formula pointing at a tab that was renamed or deleted.
+        if (!other) throw new Error(ERR_REF);
+        return evalIn(other, target);
+      });
     } catch {
       v = ERR;
     }
-    visiting.delete(ref);
-    cache.set(ref, v);
+    visiting.delete(key);
+    cache.set(key, v);
     return v;
   }
 
-  for (const ref of Object.keys(cells)) evalRef(ref);
-  return cache;
+  const result = new Map<string, Map<string, CellValue>>();
+  for (const sheet of sheets) {
+    for (const ref of Object.keys(sheet.cells)) evalIn(sheet, ref);
+    const values = new Map<string, CellValue>();
+    for (const ref of Object.keys(sheet.cells)) values.set(ref, evalIn(sheet, ref));
+    result.set(sheet.id, values);
+  }
+  return result;
 }
 
 export function displayValue(value: CellValue): string {
