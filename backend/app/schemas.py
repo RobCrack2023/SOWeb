@@ -92,6 +92,54 @@ class FolderContents(BaseModel):
     files: list[FileOut]
 
 
+# --- Chat (waSO) ---------------------------------------------------------
+
+
+class ChatContact(BaseModel):
+    id: int
+    username: str
+    online: bool
+
+
+class ChatMember(BaseModel):
+    id: int
+    username: str
+    online: bool
+
+
+class ChatMessage(BaseModel):
+    id: int
+    conversation_id: int
+    sender_id: int
+    sender: str
+    kind: str
+    body: str
+    created_at: datetime
+
+
+class ChatConversation(BaseModel):
+    id: int
+    kind: str
+    title: str
+    members: list[ChatMember]
+    unread: int
+    last_message: ChatMessage | None
+
+
+class SendMessage(BaseModel):
+    kind: str = "text"
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class CreateGroup(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    member_ids: list[int] = Field(min_length=1)
+
+
+class AddMembers(BaseModel):
+    member_ids: list[int] = Field(min_length=1)
+
+
 # --- Admin panel ---------------------------------------------------------
 
 
@@ -109,6 +157,9 @@ class AdminOverview(BaseModel):
     files: int
     storage_bytes: int
     actions_today: int
+    # Chat is counted, never read: no endpoint exposes message bodies.
+    conversations: int
+    messages: int
 
 
 class AdminUser(BaseModel):
@@ -121,6 +172,7 @@ class AdminUser(BaseModel):
     files: int
     folders: int
     storage_bytes: int
+    messages_sent: int
 
 
 class AdminSession(BaseModel):

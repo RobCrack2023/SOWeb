@@ -5,6 +5,7 @@ import { SpreadSheet } from "./spreadsheet/SpreadSheet";
 import { ShowSO } from "./presentation/ShowSO";
 import { PdfSO } from "./pdf/PdfSO";
 import { AdminPanel } from "./admin/AdminPanel";
+import { WaSO } from "./chat/WaSO";
 
 export interface AppDefinition {
   id: string;
@@ -56,6 +57,13 @@ export const APPS: AppDefinition[] = [
     component: PdfSO,
     defaultSize: { width: 1000, height: 680 },
     multiInstance: true,
+  },
+  {
+    id: "chat",
+    title: "waSO",
+    icon: "💬",
+    component: WaSO,
+    defaultSize: { width: 860, height: 600 },
   },
   {
     id: "admin",

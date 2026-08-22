@@ -29,6 +29,7 @@ interface WindowStoreState {
   nextZIndex: number;
   openApp: (appId: string, options: OpenOptions) => string;
   closeWindow: (id: string) => void;
+  closeAll: () => void;
   focusWindow: (id: string) => void;
   moveResize: (id: string, bounds: { x: number; y: number; width: number; height: number }) => void;
   minimizeWindow: (id: string) => void;
@@ -114,6 +115,11 @@ export const useWindowStore = create<WindowStoreState>((set, get) => ({
   closeWindow: (id) => {
     set((state) => ({ windows: state.windows.filter((w) => w.id !== id) }));
   },
+
+  /** Wipe the desktop on logout: this store outlives the session, so without
+   *  it the next account to log in would inherit the previous one's open
+   *  windows — and whatever document was on screen in them. */
+  closeAll: () => set({ windows: [], nextZIndex: 1 }),
 
   focusWindow: (id) => {
     const zIndex = get().nextZIndex;

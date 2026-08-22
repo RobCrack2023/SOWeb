@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useWindowStore } from "../windows/windowStore";
 import { getApp } from "../apps/registry";
 import { logout, type User } from "../lib/auth";
+import { useChatStore } from "../lib/chatStore";
 import { StartMenu } from "./StartMenu";
 import styles from "./Taskbar.module.css";
 
@@ -30,6 +31,13 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
   const now = useClock();
   const [startOpen, setStartOpen] = useState(false);
   const topZ = windows.length ? Math.max(...windows.map((x) => x.zIndex)) : 0;
+
+  const unread = useChatStore((s) => s.conversations.reduce((sum, c) => sum + c.unread, 0));
+
+  const openChat = () => {
+    const app = getApp("chat")!;
+    openApp(app.id, { title: app.title, ...app.defaultSize });
+  };
 
   const handleLogout = async () => {
     if (!window.confirm("¿Cerrar sesión?")) return;
@@ -86,6 +94,14 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
         </div>
 
         <div className={styles.tray}>
+          <button
+            className={`${styles.chatTray} ${unread > 0 ? styles.chatTrayAlert : ""}`}
+            onClick={openChat}
+            title={unread > 0 ? `${unread} mensaje(s) sin leer` : "waSO"}
+          >
+            💬
+            {unread > 0 && <span className={styles.chatBadge}>{unread > 99 ? "99+" : unread}</span>}
+          </button>
           <span className={styles.user} title={`Conectado como ${user.username}`}>
             👤 {user.username}
           </span>

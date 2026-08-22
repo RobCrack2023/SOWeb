@@ -7,6 +7,8 @@ export interface AdminOverview {
   files: number;
   storage_bytes: number;
   actions_today: number;
+  conversations: number;
+  messages: number;
 }
 
 export interface AdminUser {
@@ -19,6 +21,7 @@ export interface AdminUser {
   files: number;
   folders: number;
   storage_bytes: number;
+  messages_sent: number;
 }
 
 export interface AdminSession {

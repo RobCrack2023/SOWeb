@@ -7,12 +7,13 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 ## Características
 
 - **Cuentas de usuario**: registro propio con usuario y contraseña, e inicio de sesión. **Cada cuenta tiene su propio Escritorio y sus propios archivos**, invisibles para las demás. Las contraseñas se guardan hasheadas (PBKDF2-SHA256) y la sesión usa un token revocable guardado en el servidor.
-- **Panel de administración** (🛡️, solo para cuentas admin): quién está conectado ahora, qué archivos creó cada usuario, cuánto espacio ocupa y un registro de actividad (inicios de sesión, archivos creados/guardados/subidos/eliminados, y qué apps se abren). Muestra únicamente metadatos: el admin no puede abrir ni descargar documentos de otras cuentas.
+- **Panel de administración** (🛡️, solo para cuentas admin): quién está conectado ahora, qué archivos creó cada usuario, cuánto espacio ocupa y un registro de actividad (inicios de sesión, archivos creados/guardados/subidos/eliminados, y qué apps se abren). Muestra únicamente metadatos: el admin no puede abrir ni descargar documentos de otras cuentas, ni leer conversaciones de waSO — de los mensajes solo ve cuántos hubo.
 - **Escritorio y gestor de ventanas**: iconos de escritorio, menú de inicio, barra de tareas, ventanas arrastrables y redimensionables (`react-rnd`), con el contenido recortado correctamente al marco de la ventana.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
 - **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
 - **spreadSO** — hoja de cálculo con motor de fórmulas propio; importa/exporta `.xlsx` (vía `exceljs`).
 - **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
+- **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
 - **pdfSO** — visor y editor de PDF: edición de texto sobre el PDF que conserva la posición y apariencia original del texto reemplazado (vía `pdf-lib` + `pdfjs-dist`).
 - Todas las apps ofimáticas soportan múltiples instancias abiertas a la vez.
 
@@ -29,10 +30,12 @@ SOWeb/
 │       ├── database.py    engine/sesión de SQLAlchemy + migración de columnas
 │       ├── auth.py        hashing de contraseñas y dependencias de sesión/admin
 │       ├── activity.py    registro de acciones para el panel de administración
+│       ├── chathub.py     sockets de chat abiertos, en memoria
 │       └── routers/
 │           ├── auth.py      registro, login, logout
 │           ├── files.py     endpoints de carpetas y archivos (por usuario)
 │           ├── activity.py  eventos que reporta el navegador (apps abiertas)
+│           ├── chat.py      waSO: conversaciones, mensajes y WebSocket
 │           └── admin.py     supervisión: usuarios, sesiones, actividad
 │
 └── frontend/           SPA (React 19 + TypeScript + Vite)
@@ -42,6 +45,7 @@ SOWeb/
         ├── windows/        Window (marco de ventana) y windowStore (zustand)
         ├── apps/
         │   ├── admin/           Panel de administración
+        │   ├── chat/            waSO (chat, stickers animados)
         │   ├── file-explorer/   Explorador de archivos
         │   ├── text-editor/     writeSO
         │   ├── spreadsheet/     spreadSO
@@ -51,6 +55,7 @@ SOWeb/
         ├── lib/
         │   ├── api.ts, filesApi.ts   cliente HTTP hacia el backend
         │   ├── auth.ts               token de sesión y llamadas de login
+        │   ├── chatApi.ts, chatSocket.ts, chatStore.ts   waSO
         │   ├── fsStore.ts            estado del sistema de archivos (zustand)
         │   ├── dnd.ts, dropUpload.ts, useExternalDrop.ts   drag & drop
         │   └── office/                import/export .docx, .xlsx, .pptx
@@ -125,6 +130,25 @@ También hay un `run.bat` en la raíz para levantar el proyecto rápidamente en 
 
 La primera cuenta que se registre adopta el escritorio y los archivos que ya existieran de antes de agregar el login, **y queda como administradora**; las cuentas siguientes arrancan con un escritorio vacío y sin permisos de admin.
 
+### Chat / waSO (`backend/app/routers/chat.py`)
+
+Todos requieren sesión y solo operan sobre conversaciones de las que el usuario es miembro; el resto responde 404.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/chat/contacts` | Usuarios con los que se puede conversar |
+| GET | `/api/chat/conversations` | Conversaciones con no leídos y último mensaje |
+| POST | `/api/chat/direct/{user_id}` | Abre (o encuentra) el chat 1 a 1 con alguien |
+| POST | `/api/chat/groups` | Crea un grupo |
+| POST | `/api/chat/groups/{id}/members` | Suma personas a un grupo |
+| DELETE | `/api/chat/groups/{id}/members/me` | Salir de un grupo |
+| GET | `/api/chat/conversations/{id}/messages` | Historial |
+| POST | `/api/chat/conversations/{id}/messages` | Envía texto o sticker |
+| POST | `/api/chat/conversations/{id}/read` | Marca la conversación como leída |
+| WS | `/api/chat/ws` | Entrega en vivo, presencia y "escribiendo…" |
+
+El WebSocket recibe el token en el **primer mensaje**, no en la URL, para que no quede registrado en el historial del navegador ni en los logs del servidor. El registro de sockets abiertos vive en memoria del proceso: correr varios workers de uvicorn requeriría un bus compartido (por ejemplo Redis pub/sub).
+
 ### Administración (`backend/app/routers/admin.py`)
 
 Requieren una cuenta admin; para el resto responden 403.
@@ -138,7 +162,7 @@ Requieren una cuenta admin; para el resto responden 403.
 | GET | `/api/admin/users/{user_id}/files` | Metadatos de los archivos de un usuario |
 | POST | `/api/activity` | El navegador reporta qué app abrió (no requiere admin) |
 
-Ninguno de estos endpoints devuelve el contenido de un archivo: un admin que pida `/api/files/{id}/content` de otra cuenta recibe 404 igual que cualquier usuario.
+Ninguno de estos endpoints devuelve el contenido de un archivo ni de un mensaje: un admin que pida `/api/files/{id}/content` de otra cuenta recibe 404 igual que cualquier usuario, y del chat solo obtiene recuentos. En el registro de actividad, un `chat.send` se guarda sin el texto del mensaje.
 
 #### Gestionar administradores
 
@@ -173,5 +197,6 @@ Además: `GET /api/health` para chequeo de salud del servicio (no requiere sesi�
 
 - Endurecer la autenticación: expiración de sesiones, cambio de contraseña, límite de intentos de login.
 - Panel de administración: cerrar sesiones de forma remota, dar de baja usuarios, filtrar el registro de actividad por fecha.
+- waSO: adjuntar archivos del Drive a un mensaje, buscar en el historial, confirmaciones de lectura y notificaciones del navegador.
 - Más apps de escritorio.
 - Ejecución de `.exe`: emulación x86 en WASM (v86/WebVM) o streaming remoto de una VM Windows.

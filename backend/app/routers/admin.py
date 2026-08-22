@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from ..auth import ONLINE_WINDOW, get_admin_user
 from ..database import get_db
-from ..models import Activity, FileEntry, Folder, Session, User
+from ..models import Activity, Conversation, FileEntry, Folder, Message, Session, User
 from ..schemas import (
     AdminActivity,
     AdminFile,
@@ -56,6 +56,8 @@ def overview(db: DbSession = Depends(get_db)):
         .filter(Activity.created_at >= since)
         .scalar()
         or 0,
+        conversations=db.query(func.count(Conversation.id)).scalar() or 0,
+        messages=db.query(func.count(Message.id)).scalar() or 0,
     )
 
 
@@ -78,6 +80,10 @@ def list_users(db: DbSession = Depends(get_db)):
         .all()
     )
     file_stats = {owner: (count, size) for owner, count, size in file_rows}
+    # How many messages each account sent. Bodies are deliberately not read.
+    sent_counts = dict(
+        db.query(Message.sender_id, func.count(Message.id)).group_by(Message.sender_id).all()
+    )
 
     result = []
     for user in db.query(User).order_by(User.username).all():
@@ -94,6 +100,7 @@ def list_users(db: DbSession = Depends(get_db)):
                 files=files,
                 folders=folder_counts.get(user.id, 0),
                 storage_bytes=storage,
+                messages_sent=sent_counts.get(user.id, 0),
             )
         )
     return result

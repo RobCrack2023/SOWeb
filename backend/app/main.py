@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine, ensure_schema
-from .routers import activity, admin, auth, files
+from .routers import activity, admin, auth, chat, files
 
 Base.metadata.create_all(bind=engine)
 ensure_schema()
@@ -19,6 +19,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(files.router)
 app.include_router(activity.router)
+app.include_router(chat.router)
 app.include_router(admin.router)
 
 

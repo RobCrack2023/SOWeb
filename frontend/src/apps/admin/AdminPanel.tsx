@@ -64,6 +64,8 @@ const ACTION_LABELS: Record<string, string> = {
   "file.rename": "Renombró",
   "folder.create": "Creó carpeta",
   "folder.delete": "Eliminó carpeta",
+  "chat.send": "Envió un mensaje",
+  "chat.group": "Creó el grupo",
 };
 
 export function AdminPanel() {
@@ -133,6 +135,8 @@ export function AdminPanel() {
             <Card label="Carpetas" value={String(overview.folders)} />
             <Card label="Espacio usado" value={formatSize(overview.storage_bytes)} />
             <Card label="Acciones (24 h)" value={String(overview.actions_today)} />
+            <Card label="Conversaciones" value={String(overview.conversations)} />
+            <Card label="Mensajes" value={String(overview.messages)} />
           </div>
         )}
 
@@ -146,6 +150,7 @@ export function AdminPanel() {
                 <th className={styles.num}>Archivos</th>
                 <th className={styles.num}>Carpetas</th>
                 <th className={styles.num}>Espacio</th>
+                <th className={styles.num}>Mensajes</th>
                 <th>Última actividad</th>
               </tr>
             </thead>
@@ -165,11 +170,12 @@ export function AdminPanel() {
                     <td className={styles.num}>{u.files}</td>
                     <td className={styles.num}>{u.folders}</td>
                     <td className={styles.num}>{formatSize(u.storage_bytes)}</td>
+                    <td className={styles.num}>{u.messages_sent}</td>
                     <td>{formatWhen(u.last_seen)}</td>
                   </tr>
                   {expanded === u.id && (
                     <tr>
-                      <td colSpan={7} className={styles.nested}>
+                      <td colSpan={8} className={styles.nested}>
                         {userFiles.length === 0 ? (
                           <div className={styles.empty}>Sin archivos.</div>
                         ) : (

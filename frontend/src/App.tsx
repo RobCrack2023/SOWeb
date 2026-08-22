@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Desktop } from "./desktop/Desktop";
 import { LoginScreen } from "./auth/LoginScreen";
 import { fetchMe, getToken, heartbeat, type User } from "./lib/auth";
+import { useChatStore } from "./lib/chatStore";
+import { useWindowStore } from "./windows/windowStore";
 
 /** Well inside the 5-minute window the backend uses to call a session online. */
 const HEARTBEAT_MS = 120000;
@@ -36,6 +38,19 @@ function App() {
     if (!user) return;
     const timer = setInterval(heartbeat, HEARTBEAT_MS);
     return () => clearInterval(timer);
+  }, [user]);
+
+  // Chat runs at the session level, not inside waSO: messages have to arrive
+  // (and light up the taskbar) even when the app window is closed. Windows and
+  // chat state are torn down together so nothing survives into the next login.
+  useEffect(() => {
+    if (!user) return;
+    const { start, stop } = useChatStore.getState();
+    start();
+    return () => {
+      stop();
+      useWindowStore.getState().closeAll();
+    };
   }, [user]);
 
   if (checking) return null;

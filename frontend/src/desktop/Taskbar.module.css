@@ -120,6 +120,63 @@
   gap: 4px;
 }
 
+.chatTray {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 15px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.chatTray:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Unread mail nudges the icon so it's noticeable without being a popup. */
+.chatTrayAlert {
+  animation: chatNudge 1.8s ease-in-out infinite;
+}
+
+@keyframes chatNudge {
+  0%,
+  70%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  76% {
+    transform: rotate(-11deg) scale(1.12);
+  }
+  84% {
+    transform: rotate(9deg) scale(1.12);
+  }
+  92% {
+    transform: rotate(-5deg) scale(1.05);
+  }
+}
+
+.chatBadge {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  color: #fff;
+  background: #e8433c;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1.5px rgba(28, 30, 38, 0.9);
+}
+
 .user {
   max-width: 140px;
   overflow: hidden;

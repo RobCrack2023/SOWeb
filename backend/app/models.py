@@ -76,6 +76,59 @@ class Folder(Base):
     files: Mapped[list["FileEntry"]] = relationship(back_populates="folder", cascade="all, delete-orphan")
 
 
+class Conversation(Base):
+    """A direct (two-person) chat or a named group."""
+
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), default="direct")  # "direct" | "group"
+    # Groups carry a title; direct chats are named after the other person.
+    title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    members: Mapped[list["ConversationMember"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+
+class ConversationMember(Base):
+    __tablename__ = "conversation_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    # Everything created after this instant counts as unread for this member.
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="members")
+    user: Mapped["User"] = relationship()
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        ForeignKey("conversations.id"), index=True
+    )
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    # "text" holds what was typed; "sticker" holds a sticker id from the catalog.
+    kind: Mapped[str] = mapped_column(String(16), default="text")
+    body: Mapped[str] = mapped_column(String(4000))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+    sender: Mapped["User"] = relationship()
+
+
 class FileEntry(Base):
     __tablename__ = "files"
 

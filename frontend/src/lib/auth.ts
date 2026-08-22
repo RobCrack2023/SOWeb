@@ -14,15 +14,24 @@ interface LoginResponse {
 const TOKEN_KEY = "soweb.auth.token";
 
 let token: string | null = localStorage.getItem(TOKEN_KEY);
+/** Who the token belongs to, so apps can identify the user without prop drilling. */
+let currentUser: User | null = null;
 
 export function getToken(): string | null {
   return token;
 }
 
+export function getCurrentUser(): User | null {
+  return currentUser;
+}
+
 function setToken(value: string | null): void {
   token = value;
   if (value) localStorage.setItem(TOKEN_KEY, value);
-  else localStorage.removeItem(TOKEN_KEY);
+  else {
+    localStorage.removeItem(TOKEN_KEY);
+    currentUser = null;
+  }
 }
 
 /** Authorization header for an authenticated request, or nothing when logged out. */
@@ -40,6 +49,7 @@ async function submit(path: string, username: string, password: string): Promise
   if (!res.ok) throw new Error(body?.detail ?? "No se pudo completar la operación");
   const data = body as LoginResponse;
   setToken(data.token);
+  currentUser = data.user;
   return data.user;
 }
 
@@ -66,7 +76,8 @@ export async function fetchMe(): Promise<User | null> {
       setToken(null);
       return null;
     }
-    return (await res.json()) as User;
+    currentUser = (await res.json()) as User;
+    return currentUser;
   } catch {
     return null;
   }
