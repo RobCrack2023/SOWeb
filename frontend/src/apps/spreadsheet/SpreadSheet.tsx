@@ -28,8 +28,16 @@ import {
 import { SheetTabs } from "./SheetTabs";
 import styles from "./SpreadSheet.module.css";
 
-const COLS = 26;
-const ROWS = 40;
+/** A blank sheet still shows this much room to type into. */
+const MIN_COLS = 26;
+const MIN_ROWS = 40;
+/** Spare space past the last used cell, so there's always somewhere to grow. */
+const SLACK_COLS = 3;
+const SLACK_ROWS = 12;
+/** Must match .cell/.rowHead height in the stylesheet. */
+const ROW_H = 24;
+/** Rows drawn beyond the viewport, to keep scrolling from flashing blanks. */
+const OVERSCAN = 12;
 const FALLBACK_NAME = "Hoja sin título";
 
 export interface SpreadSheetProps {
@@ -60,6 +68,8 @@ export function SpreadSheet({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
   const savedNameRef = useRef<string | null>(null);
   const desktopIdRef = useRef<number | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -77,6 +87,24 @@ export function SpreadSheet({
     );
     setDirty(true);
   };
+
+  // The grid grows to fit whatever the sheet actually holds — an imported
+  // workbook can run to thousands of rows.
+  const { cols: COLS, rows: ROWS } = useMemo(() => {
+    let maxCol = MIN_COLS - SLACK_COLS - 1;
+    let maxRow = MIN_ROWS - SLACK_ROWS - 1;
+    const refs = new Set([...Object.keys(cells), ...Object.keys(active?.styles ?? {})]);
+    for (const ref of refs) {
+      const p = parseRef(ref);
+      if (!p) continue;
+      if (p.col > maxCol) maxCol = p.col;
+      if (p.row > maxRow) maxRow = p.row;
+    }
+    return {
+      cols: Math.max(MIN_COLS, maxCol + 1 + SLACK_COLS),
+      rows: Math.max(MIN_ROWS, maxRow + 1 + SLACK_ROWS),
+    };
+  }, [cells, active?.styles]);
 
   const loadSheets = (loaded: Sheet[]) => {
     setSheets(loaded);
@@ -120,6 +148,49 @@ export function SpreadSheet({
   useEffect(() => {
     getDesktopId().then((id) => (desktopIdRef.current = id));
   }, []);
+
+  // Only the rows near the viewport are put in the DOM; a 6000-row sheet would
+  // otherwise mean well over a hundred thousand cells.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const onScroll = () => setScrollTop(el.scrollTop);
+    const onResize = () => setViewportH(el.clientHeight);
+    onResize();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const observer = new ResizeObserver(onResize);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      observer.disconnect();
+    };
+  }, []);
+
+  // Switching to a shorter sheet leaves the old scroll offset behind, which
+  // would put the drawn window past the end of the new sheet — i.e. blank.
+  useEffect(() => {
+    if (gridRef.current) gridRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [activeId]);
+
+  const maxFirstRow = Math.max(0, ROWS - 1);
+  const firstRow = Math.min(maxFirstRow, Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN));
+  const lastRow = Math.min(
+    ROWS,
+    Math.max(firstRow + 1, Math.ceil((scrollTop + (viewportH || 600)) / ROW_H) + OVERSCAN),
+  );
+
+  // Keyboard navigation can walk the selection outside the drawn window.
+  useEffect(() => {
+    const el = gridRef.current;
+    const p = parseRef(selected);
+    if (!el || !p) return;
+    const top = p.row * ROW_H;
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (top + ROW_H > el.scrollTop + el.clientHeight) {
+      el.scrollTop = top + ROW_H - el.clientHeight;
+    }
+  }, [selected]);
 
   useEffect(() => {
     if (windowId) setTitle(windowId, `${dirty ? "● " : ""}${name} — spreadSO`);
@@ -388,7 +459,14 @@ export function SpreadSheet({
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: ROWS }, (_, r) => (
+            {firstRow > 0 && (
+              <tr style={{ height: firstRow * ROW_H }} aria-hidden>
+                <td colSpan={COLS + 1} />
+              </tr>
+            )}
+            {Array.from({ length: Math.max(0, lastRow - firstRow) }, (_, i) => {
+              const r = firstRow + i;
+              return (
               <tr key={r}>
                 <th className={styles.rowHead}>{r + 1}</th>
                 {Array.from({ length: COLS }, (_, c) => {
@@ -397,11 +475,22 @@ export function SpreadSheet({
                   const isEditing = editing === ref;
                   const val = computed.get(ref) ?? "";
                   const isError = typeof val === "string" && val.startsWith("#");
+                  const style = active?.styles[ref];
                   return (
                     <td
                       key={c}
                       data-ref={ref}
                       className={`${styles.cell} ${isSel ? styles.selectedCell : ""} ${isError ? styles.errorCell : ""}`}
+                      style={
+                        style && {
+                          background: style.fill,
+                          // An error has to stay visibly red, whatever the
+                          // sheet's own font colour says.
+                          color: isError ? undefined : style.color,
+                          fontWeight: style.bold ? 700 : undefined,
+                          fontStyle: style.italic ? "italic" : undefined,
+                        }
+                      }
                       onMouseDown={() => {
                         if (!isEditing) {
                           finishEdit();
@@ -428,7 +517,13 @@ export function SpreadSheet({
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
+            {lastRow < ROWS && (
+              <tr style={{ height: (ROWS - lastRow) * ROW_H }} aria-hidden>
+                <td colSpan={COLS + 1} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

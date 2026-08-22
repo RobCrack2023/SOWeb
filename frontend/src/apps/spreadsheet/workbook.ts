@@ -5,7 +5,7 @@
  * `parseDocument` still accepts that shape and reads it as a single sheet.
  */
 
-import type { Cells, Sheet } from "./formula";
+import type { Cells, CellStyles, Sheet } from "./formula";
 
 export const DEFAULT_SHEET_NAME = "Hoja1";
 /** Excel's own limit, worth matching so exports never get truncated. */
@@ -13,7 +13,7 @@ export const MAX_SHEET_NAME = 31;
 
 interface DocumentV2 {
   version: 2;
-  sheets: { name: string; cells: Cells }[];
+  sheets: { name: string; cells: Cells; styles?: CellStyles }[];
 }
 
 let counter = 0;
@@ -23,8 +23,8 @@ function newId(): string {
   return `s${Date.now().toString(36)}${counter}`;
 }
 
-export function makeSheet(name: string, cells: Cells = {}): Sheet {
-  return { id: newId(), name, cells };
+export function makeSheet(name: string, cells: Cells = {}, styles: CellStyles = {}): Sheet {
+  return { id: newId(), name, cells, styles };
 }
 
 export function blankWorkbook(): Sheet[] {
@@ -81,7 +81,14 @@ export function parseDocument(content: string): Sheet[] {
   ) {
     const sheets = (parsed as DocumentV2).sheets
       .filter((s) => s && isCellMap(s.cells))
-      .map((s) => makeSheet(sanitizeSheetName(String(s.name)) || DEFAULT_SHEET_NAME, s.cells));
+      .map((s) =>
+        makeSheet(
+          sanitizeSheetName(String(s.name)) || DEFAULT_SHEET_NAME,
+          s.cells,
+          // Styles arrived later than the sheets array; older files lack them.
+          typeof s.styles === "object" && s.styles !== null ? s.styles : {},
+        ),
+      );
     return sheets.length ? sheets : blankWorkbook();
   }
 
@@ -93,7 +100,12 @@ export function parseDocument(content: string): Sheet[] {
 export function serializeDocument(sheets: Sheet[]): string {
   const doc: DocumentV2 = {
     version: 2,
-    sheets: sheets.map((s) => ({ name: s.name, cells: s.cells })),
+    sheets: sheets.map((s) => ({
+      name: s.name,
+      cells: s.cells,
+      // Omit the key entirely on unformatted sheets to keep files small.
+      ...(Object.keys(s.styles).length ? { styles: s.styles } : {}),
+    })),
   };
   return JSON.stringify(doc);
 }

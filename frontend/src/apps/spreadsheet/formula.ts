@@ -14,11 +14,26 @@
 export type CellValue = number | string;
 export type Cells = Record<string, string>;
 
+/**
+ * Visual formatting for one cell. Kept apart from the value so the formula
+ * engine never has to care about it, and so a file saved without styles still
+ * parses. Colours are CSS hex ("#1e3a5f").
+ */
+export interface CellStyle {
+  fill?: string;
+  color?: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+export type CellStyles = Record<string, CellStyle>;
+
 /** One tab of a workbook. `id` stays stable while the name is edited. */
 export interface Sheet {
   id: string;
   name: string;
   cells: Cells;
+  styles: CellStyles;
 }
 
 const ERR_CYCLE = "#CICLO";
