@@ -522,8 +522,10 @@
   position: absolute;
   left: 10px;
   bottom: 54px;
-  width: 268px;
+  width: 300px;
   padding: 10px;
+  /* Nothing should ever paint past the card's rounded edge. */
+  overflow: hidden;
   background: #fff;
   border: 1px solid #e0e2e6;
   border-radius: 10px;
@@ -552,17 +554,21 @@
   color: #8a8f98;
 }
 
+/* minmax(0, …) rather than 1fr: a plain 1fr can't shrink below the emoji's
+   own width, which pushed the last columns outside the card. */
 .pickerGrid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
 }
 
 .pickerItem {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 42px;
+  min-width: 0;
+  height: 46px;
+  padding: 0;
   background: none;
   border: none;
   border-radius: 7px;
