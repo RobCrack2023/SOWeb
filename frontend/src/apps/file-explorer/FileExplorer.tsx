@@ -5,7 +5,14 @@ import {
   deleteFile,
   deleteFolder,
   downloadToDisk,
+  emptyTrash,
   getContents,
+  listTrash,
+  purgeTrashItem,
+  restoreTrashItem,
+  searchDrive,
+  type SearchHit,
+  type TrashItem,
   iconForFile,
   officeKind,
   moveFile,
@@ -43,6 +50,8 @@ function formatSize(bytes: number): string {
 
 type Renaming = { type: "folder" | "file"; id: number } | null;
 type View = "list" | "grid";
+/** What the main pane is showing: a folder, search results, or the trash. */
+type Pane = "browse" | "search" | "trash";
 
 export interface FileExplorerProps {
   initialFolderId?: number | null;
@@ -59,6 +68,11 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   const [dragOverId, setDragOverId] = useState<number | "root" | null>(null);
   const [view, setView] = useState<View>("list");
   const [reloadKey, setReloadKey] = useState(0);
+  const [pane, setPane] = useState<Pane>("browse");
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [trash, setTrash] = useState<TrashItem[]>([]);
+  const [busy, setBusy] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openApp = useWindowStore((s) => s.openApp);
   const notifyChange = useFsStore((s) => s.notifyChange);
@@ -122,7 +136,60 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
 
   const refresh = () => notifyChange();
 
+  const openTrash = useCallback(() => {
+    setPane("trash");
+    setBusy(true);
+    listTrash()
+      .then(setTrash)
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  }, []);
+
+  const runSearch = useCallback((text: string) => {
+    const needle = text.trim();
+    if (!needle) {
+      setPane("browse");
+      setHits([]);
+      return;
+    }
+    setPane("search");
+    setBusy(true);
+    searchDrive(needle)
+      .then(setHits)
+      .catch((e) => setError(String(e)))
+      .finally(() => setBusy(false));
+  }, []);
+
+  const restore = async (item: TrashItem) => {
+    await restoreTrashItem(item);
+    openTrash();
+    refresh();
+  };
+
+  const purge = async (item: TrashItem) => {
+    if (!window.confirm(`Eliminar "${item.name}" definitivamente? Esto no se puede deshacer.`))
+      return;
+    await purgeTrashItem(item);
+    openTrash();
+  };
+
+  const emptyAll = async () => {
+    if (trash.length === 0) return;
+    if (!window.confirm("Vaciar la papelera? Todo su contenido se borra para siempre.")) return;
+    await emptyTrash();
+    openTrash();
+  };
+
+  /** Jump from a search hit to the folder that holds it. */
+  const goToHit = (hit: SearchHit) => {
+    setQuery("");
+    setPane("browse");
+    navigate(hit.kind === "folder" ? hit.id : hit.folder_id);
+  };
+
   const navigate = (id: number | null) => {
+    // Any navigation leaves the search results or the trash behind.
+    setPane("browse");
     setHistory((h) => [...h.slice(0, histIndex + 1), id]);
     setHistIndex((i) => i + 1);
     setCurrentFolderId(id);
@@ -389,6 +456,29 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
         </button>
         <input ref={fileInputRef} type="file" hidden onChange={handleFileSelected} />
         <div className={styles.spacer} />
+        <input
+          className={styles.searchBox}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!e.target.value.trim() && pane === "search") setPane("browse");
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") runSearch(query);
+            if (e.key === "Escape") {
+              setQuery("");
+              setPane("browse");
+            }
+          }}
+          placeholder="🔍 Buscar…"
+        />
+        <button
+          className={pane === "trash" ? styles.viewActive : ""}
+          onClick={openTrash}
+          title="Papelera"
+        >
+          🗑
+        </button>
         <div className={styles.viewToggle}>
           <button
             className={view === "list" ? styles.viewActive : ""}
@@ -451,21 +541,90 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
           <FolderTree currentFolderId={currentFolderId} reloadKey={reloadKey} onNavigate={navigate} />
         </div>
 
-        <div
-          className={`${styles.main} ${view === "grid" ? styles.mainGrid : ""}`}
-          onContextMenu={openBackgroundMenu}
-        >
-          {!contents && <div className={styles.loading}>Cargando…</div>}
-          {contents && contents.folders.length === 0 && contents.files.length === 0 && (
-            <div className={styles.empty}>
-              {currentFolderId == null
-                ? "No hay carpetas todavía. Creá una para empezar (clic derecho aquí)."
-                : "Esta carpeta está vacía."}
+        {pane === "trash" ? (
+          <div className={styles.main}>
+            <div className={styles.paneHead}>
+              <span className={styles.paneTitle}>🗑 Papelera</span>
+              <button onClick={emptyAll} disabled={trash.length === 0}>
+                Vaciar papelera
+              </button>
+              <button onClick={() => setPane("browse")}>Volver a los archivos</button>
             </div>
-          )}
-          {contents?.folders.map(renderFolder)}
-          {contents?.files.map(renderFile)}
-        </div>
+            {busy && <div className={styles.loading}>Cargando…</div>}
+            {!busy && trash.length === 0 && (
+              <div className={styles.empty}>La papelera está vacía.</div>
+            )}
+            {trash.map((item) => (
+              <div key={`${item.kind}-${item.id}`} className={styles.item}>
+                <span className={styles.itemIcon}>{item.kind === "folder" ? "📁" : "📄"}</span>
+                <span className={styles.itemName}>{item.name}</span>
+                <span className={styles.itemMeta}>{item.location}</span>
+                <button onClick={() => restore(item)} title="Devolver a su lugar">
+                  ↩ Restaurar
+                </button>
+                <button
+                  className={styles.deleteBtn}
+                  onClick={() => purge(item)}
+                  title="Eliminar definitivamente"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : pane === "search" ? (
+          <div className={styles.main}>
+            <div className={styles.paneHead}>
+              <span className={styles.paneTitle}>
+                Resultados para «{query.trim()}»{!busy && ` — ${hits.length}`}
+              </span>
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setPane("browse");
+                }}
+              >
+                Limpiar
+              </button>
+            </div>
+            {busy && <div className={styles.loading}>Buscando…</div>}
+            {!busy && hits.length === 0 && (
+              <div className={styles.empty}>No se encontró nada con ese nombre.</div>
+            )}
+            {hits.map((hit) => (
+              <div
+                key={`${hit.kind}-${hit.id}`}
+                className={styles.item}
+                onDoubleClick={() => goToHit(hit)}
+              >
+                <span className={styles.itemIcon}>
+                  {hit.kind === "folder"
+                    ? "📁"
+                    : iconForFile({ name: hit.name, content_type: hit.content_type })}
+                </span>
+                <span className={styles.itemName}>{hit.name}</span>
+                <span className={styles.itemMeta}>{hit.location}</span>
+                <button onClick={() => goToHit(hit)}>Ir a la carpeta</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className={`${styles.main} ${view === "grid" ? styles.mainGrid : ""}`}
+            onContextMenu={openBackgroundMenu}
+          >
+            {!contents && <div className={styles.loading}>Cargando…</div>}
+            {contents && contents.folders.length === 0 && contents.files.length === 0 && (
+              <div className={styles.empty}>
+                {currentFolderId == null
+                  ? "No hay carpetas todavía. Creá una para empezar (clic derecho aquí)."
+                  : "Esta carpeta está vacía."}
+              </div>
+            )}
+            {contents?.folders.map(renderFolder)}
+            {contents?.files.map(renderFile)}
+          </div>
+        )}
       </div>
 
       <DropOverlay

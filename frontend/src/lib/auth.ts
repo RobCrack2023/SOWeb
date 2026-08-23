@@ -83,6 +83,22 @@ export async function fetchMe(): Promise<User | null> {
   }
 }
 
+/** Change your own password. Other sessions are revoked server-side. */
+export async function changePassword(current: string, next: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/auth/password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ current_password: current, new_password: next }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail = body?.detail;
+    throw new Error(
+      typeof detail === "string" ? detail : "No se pudo cambiar la contraseña.",
+    );
+  }
+}
+
 /** Called when any API request comes back 401: the token is no longer good. */
 export function clearSession(): void {
   setToken(null);

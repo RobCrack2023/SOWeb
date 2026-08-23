@@ -27,8 +27,11 @@ def ensure_schema() -> None:
     inspector = inspect(engine)
     with engine.begin() as conn:
         for table, columns in (
-            ("folders", {"pos_x": "INTEGER", "pos_y": "INTEGER", "owner_id": "INTEGER"}),
-            ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER"}),
+            (
+                "folders",
+                {"pos_x": "INTEGER", "pos_y": "INTEGER", "owner_id": "INTEGER", "deleted_at": "DATETIME"},
+            ),
+            ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER", "deleted_at": "DATETIME"}),
             ("users", {"is_admin": "BOOLEAN DEFAULT 0"}),
             ("sessions", {"last_seen": "DATETIME"}),
         ):

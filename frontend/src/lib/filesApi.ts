@@ -29,6 +29,26 @@ export interface IconPos {
   y: number;
 }
 
+export interface TrashItem {
+  kind: "file" | "folder";
+  id: number;
+  name: string;
+  size: number | null;
+  content_type: string | null;
+  location: string;
+  deleted_at: string;
+}
+
+export interface SearchHit {
+  kind: "file" | "folder";
+  id: number;
+  name: string;
+  folder_id: number | null;
+  location: string;
+  size: number | null;
+  content_type: string | null;
+}
+
 export interface FolderContents {
   folder: FolderOut | null;
   breadcrumb: FolderOut[];
@@ -278,3 +298,22 @@ export function updateFileContent(id: number, content: string): Promise<FileOut>
     body: JSON.stringify({ content }),
   });
 }
+
+// --- Papelera y búsqueda ---------------------------------------------------
+
+export const listTrash = () => apiFetch<TrashItem[]>("/trash");
+
+export const restoreTrashItem = (item: TrashItem) =>
+  apiFetch<void>(`/trash/${item.kind === "folder" ? "folders" : "files"}/${item.id}/restore`, {
+    method: "POST",
+  });
+
+export const purgeTrashItem = (item: TrashItem) =>
+  apiFetch<void>(`/trash/${item.kind === "folder" ? "folders" : "files"}/${item.id}`, {
+    method: "DELETE",
+  });
+
+export const emptyTrash = () => apiFetch<void>("/trash", { method: "DELETE" });
+
+export const searchDrive = (query: string) =>
+  apiFetch<SearchHit[]>(`/search?q=${encodeURIComponent(query)}`);

@@ -6,7 +6,7 @@ from .. import activity
 from ..auth import create_session, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Folder, Session, User
-from ..schemas import Credentials, LoginOut, UserOut
+from ..schemas import Credentials, LoginOut, PasswordChange, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -84,3 +84,27 @@ def logout(
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.post("/password", status_code=204)
+def change_password(
+    payload: PasswordChange,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: DbSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Change your own password, proving you know the current one."""
+    if not verify_password(payload.current_password, user.password_hash):
+        raise HTTPException(status_code=403, detail="La contraseña actual no es correcta")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=400, detail="La contraseña nueva es igual a la actual")
+
+    user.password_hash = hash_password(payload.new_password)
+    # A password change should log out everywhere else, in case the old one
+    # leaked. The session making the request stays alive.
+    keep = credentials.credentials if credentials else None
+    for session in db.query(Session).filter(Session.user_id == user.id).all():
+        if session.token != keep:
+            db.delete(session)
+    activity.log(db, user.id, "user.password")
+    db.commit()

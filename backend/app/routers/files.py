@@ -1,8 +1,9 @@
 import shutil
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -20,11 +21,17 @@ from ..schemas import (
     FileContentOut,
     FileContentUpdate,
     FolderContents,
+    SearchHit,
+    TrashItem,
 )
 
 router = APIRouter(prefix="/api", tags=["files"])
 
 STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _breadcrumb(db: Session, folder: Folder | None) -> list[Folder]:
@@ -36,22 +43,44 @@ def _breadcrumb(db: Session, folder: Folder | None) -> list[Folder]:
     return list(reversed(chain))
 
 
-def _get_folder_or_404(db: Session, folder_id: int, user: User) -> Folder:
+def _get_folder_or_404(
+    db: Session, folder_id: int, user: User, *, trashed: bool = False
+) -> Folder:
     """Someone else's folder reads as missing rather than forbidden, so the API
-    never confirms that an id belongs to another account."""
+    never confirms that an id belongs to another account. Trashed folders are
+    invisible too, except to the trash endpoints that pass trashed=True."""
     folder = db.get(Folder, folder_id)
     if folder is None or folder.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if (folder.deleted_at is not None) != trashed:
         raise HTTPException(status_code=404, detail="Folder not found")
     return folder
 
 
-def _get_file_or_404(db: Session, file_id: int, user: User) -> FileEntry:
+def _get_file_or_404(
+    db: Session, file_id: int, user: User, *, trashed: bool = False
+) -> FileEntry:
     """Files have no owner column of their own — they inherit it from the
     folder they live in."""
     entry = db.get(FileEntry, file_id)
     if entry is None or entry.folder is None or entry.folder.owner_id != user.id:
         raise HTTPException(status_code=404, detail="File not found")
+    if (entry.deleted_at is not None) != trashed:
+        raise HTTPException(status_code=404, detail="File not found")
     return entry
+
+
+def _descendant_folders(db: Session, folder: Folder) -> list[Folder]:
+    """Every folder below `folder`, itself included, breadth-first."""
+    found = [folder]
+    frontier = [folder.id]
+    while frontier:
+        children = db.query(Folder).filter(Folder.parent_id.in_(frontier)).all()
+        if not children:
+            break
+        found.extend(children)
+        frontier = [c.id for c in children]
+    return found
 
 
 def _creates_cycle(db: Session, folder_id: int, new_parent_id: int) -> bool:
@@ -97,11 +126,22 @@ def get_contents(
 
     subfolders = (
         db.query(Folder)
-        .filter(Folder.parent_id == folder_id, Folder.owner_id == user.id)
+        .filter(
+            Folder.parent_id == folder_id,
+            Folder.owner_id == user.id,
+            Folder.deleted_at.is_(None),
+        )
         .order_by(Folder.name)
         .all()
     )
-    files = db.query(FileEntry).filter(FileEntry.folder_id == folder_id).order_by(FileEntry.name).all() if folder_id is not None else []
+    files = (
+        db.query(FileEntry)
+        .filter(FileEntry.folder_id == folder_id, FileEntry.deleted_at.is_(None))
+        .order_by(FileEntry.name)
+        .all()
+        if folder_id is not None
+        else []
+    )
 
     return FolderContents(
         folder=folder,
@@ -168,11 +208,19 @@ def delete_folder(
     user: User = Depends(get_current_user),
 ):
     folder = _get_folder_or_404(db, folder_id, user)
-    for file in folder.files:
-        blob = STORAGE_DIR / file.storage_path
-        blob.unlink(missing_ok=True)
+    if folder.is_desktop:
+        raise HTTPException(status_code=400, detail="No se puede eliminar el Escritorio")
+
+    # Moving to the trash, not erasing: the whole subtree is marked with one
+    # timestamp so restoring the folder brings its contents back with it.
+    when = _now()
+    for descendant in _descendant_folders(db, folder):
+        if descendant.deleted_at is None:
+            descendant.deleted_at = when
+        for file in descendant.files:
+            if file.deleted_at is None:
+                file.deleted_at = when
     activity.log(db, user.id, "folder.delete", folder.name)
-    db.delete(folder)
     db.commit()
 
 
@@ -318,8 +366,246 @@ def delete_file(
     user: User = Depends(get_current_user),
 ):
     entry = _get_file_or_404(db, file_id, user)
-    blob = STORAGE_DIR / entry.storage_path
-    blob.unlink(missing_ok=True)
+    # Soft delete: the bytes stay on disk until the trash is emptied.
+    entry.deleted_at = _now()
     activity.log(db, user.id, "file.delete", entry.name)
+    db.commit()
+
+
+# --- Papelera --------------------------------------------------------------
+
+
+def _path_of(db: Session, folder: Folder | None) -> str:
+    """Readable location ("Escritorio / Informes") for trash and search rows."""
+    if folder is None:
+        return "Mi unidad"
+    names = [f.name for f in _breadcrumb(db, folder)]
+    return " / ".join(names) if names else folder.name
+
+
+def _purge_folder(db: Session, folder: Folder) -> None:
+    """Erase a folder subtree for real, removing every stored blob first."""
+    for descendant in _descendant_folders(db, folder):
+        for file in descendant.files:
+            (STORAGE_DIR / file.storage_path).unlink(missing_ok=True)
+    # The relationships cascade, so deleting the root removes the rows below it.
+    db.delete(folder)
+
+
+@router.get("/trash", response_model=list[TrashItem])
+def list_trash(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Only the top of each deleted subtree is listed: trashing a folder marks
+    its contents too, and showing all of them would be noise."""
+    trashed_ids = {
+        row[0]
+        for row in db.query(Folder.id).filter(
+            Folder.owner_id == user.id, Folder.deleted_at.isnot(None)
+        )
+    }
+
+    items: list[TrashItem] = []
+    folders = (
+        db.query(Folder)
+        .filter(Folder.owner_id == user.id, Folder.deleted_at.isnot(None))
+        .all()
+    )
+    for folder in folders:
+        if folder.parent_id in trashed_ids:
+            continue
+        items.append(
+            TrashItem(
+                kind="folder",
+                id=folder.id,
+                name=folder.name,
+                size=None,
+                content_type=None,
+                location=_path_of(db, folder.parent),
+                deleted_at=folder.deleted_at,
+            )
+        )
+
+    files = (
+        db.query(FileEntry)
+        .join(Folder, FileEntry.folder_id == Folder.id)
+        .filter(Folder.owner_id == user.id, FileEntry.deleted_at.isnot(None))
+        .all()
+    )
+    for file in files:
+        if file.folder_id in trashed_ids:
+            continue
+        items.append(
+            TrashItem(
+                kind="file",
+                id=file.id,
+                name=file.name,
+                size=file.size,
+                content_type=file.content_type,
+                location=_path_of(db, file.folder),
+                deleted_at=file.deleted_at,
+            )
+        )
+
+    items.sort(key=lambda i: i.deleted_at, reverse=True)
+    return items
+
+
+@router.post("/trash/folders/{folder_id}/restore", status_code=204)
+def restore_folder(
+    folder_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    folder = _get_folder_or_404(db, folder_id, user, trashed=True)
+    # If the parent is still in the trash the folder would come back invisible,
+    # so it returns to the desktop instead.
+    if folder.parent_id is not None:
+        parent = db.get(Folder, folder.parent_id)
+        if parent is None or parent.deleted_at is not None:
+            desktop = get_or_create_desktop(db, user)
+            folder.parent_id = desktop.id
+
+    for descendant in _descendant_folders(db, folder):
+        descendant.deleted_at = None
+        for file in descendant.files:
+            file.deleted_at = None
+    db.commit()
+
+
+@router.post("/trash/files/{file_id}/restore", status_code=204)
+def restore_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user, trashed=True)
+    if entry.folder is None or entry.folder.deleted_at is not None:
+        entry.folder_id = get_or_create_desktop(db, user).id
+    entry.deleted_at = None
+    db.commit()
+
+
+@router.delete("/trash/folders/{folder_id}", status_code=204)
+def purge_folder(
+    folder_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    folder = _get_folder_or_404(db, folder_id, user, trashed=True)
+    _purge_folder(db, folder)
+    db.commit()
+
+
+@router.delete("/trash/files/{file_id}", status_code=204)
+def purge_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    entry = _get_file_or_404(db, file_id, user, trashed=True)
+    (STORAGE_DIR / entry.storage_path).unlink(missing_ok=True)
     db.delete(entry)
     db.commit()
+
+
+@router.delete("/trash", status_code=204)
+def empty_trash(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    trashed_ids = {
+        row[0]
+        for row in db.query(Folder.id).filter(
+            Folder.owner_id == user.id, Folder.deleted_at.isnot(None)
+        )
+    }
+
+    # Loose files first, then whole folder subtrees.
+    loose = (
+        db.query(FileEntry)
+        .join(Folder, FileEntry.folder_id == Folder.id)
+        .filter(Folder.owner_id == user.id, FileEntry.deleted_at.isnot(None))
+        .all()
+    )
+    for file in loose:
+        if file.folder_id in trashed_ids:
+            continue
+        (STORAGE_DIR / file.storage_path).unlink(missing_ok=True)
+        db.delete(file)
+
+    roots = (
+        db.query(Folder)
+        .filter(Folder.owner_id == user.id, Folder.deleted_at.isnot(None))
+        .all()
+    )
+    for folder in roots:
+        if folder.parent_id in trashed_ids:
+            continue
+        _purge_folder(db, folder)
+
+    activity.log(db, user.id, "trash.empty")
+    db.commit()
+
+
+# --- Búsqueda --------------------------------------------------------------
+
+
+@router.get("/search", response_model=list[SearchHit])
+def search(
+    q: str = Query(min_length=1, max_length=120),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Find files and folders by name, anywhere in this user's drive."""
+    # Escape the LIKE wildcards so a literal % or _ searches for itself.
+    needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    if not needle:
+        return []
+    pattern = f"%{needle}%"
+
+    hits: list[SearchHit] = []
+    folders = (
+        db.query(Folder)
+        .filter(
+            Folder.owner_id == user.id,
+            Folder.deleted_at.is_(None),
+            Folder.name.ilike(pattern, escape="\\"),
+        )
+        .order_by(Folder.name)
+        .limit(50)
+        .all()
+    )
+    for folder in folders:
+        hits.append(
+            SearchHit(
+                kind="folder",
+                id=folder.id,
+                name=folder.name,
+                folder_id=folder.parent_id,
+                location=_path_of(db, folder.parent),
+                size=None,
+                content_type=None,
+            )
+        )
+
+    files = (
+        db.query(FileEntry)
+        .join(Folder, FileEntry.folder_id == Folder.id)
+        .filter(
+            Folder.owner_id == user.id,
+            FileEntry.deleted_at.is_(None),
+            FileEntry.name.ilike(pattern, escape="\\"),
+        )
+        .order_by(FileEntry.name)
+        .limit(100)
+        .all()
+    )
+    for file in files:
+        hits.append(
+            SearchHit(
+                kind="file",
+                id=file.id,
+                name=file.name,
+                folder_id=file.folder_id,
+                location=_path_of(db, file.folder),
+                size=file.size,
+                content_type=file.content_type,
+            )
+        )
+    return hits

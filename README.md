@@ -9,6 +9,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **Cuentas de usuario**: registro propio con usuario y contraseña, e inicio de sesión. **Cada cuenta tiene su propio Escritorio y sus propios archivos**, invisibles para las demás. Las contraseñas se guardan hasheadas (PBKDF2-SHA256) y la sesión usa un token revocable guardado en el servidor.
 - **Panel de administración** (🛡️, solo para cuentas admin): quién está conectado ahora, qué archivos creó cada usuario, cuánto espacio ocupa y un registro de actividad (inicios de sesión, archivos creados/guardados/subidos/eliminados, y qué apps se abren). Muestra únicamente metadatos: el admin no puede abrir ni descargar documentos de otras cuentas, ni leer conversaciones de waSO — de los mensajes solo ve cuántos hubo.
 - **Escritorio y gestor de ventanas**: iconos de escritorio, menú de inicio, barra de tareas, ventanas arrastrables y redimensionables (`react-rnd`), con el contenido recortado correctamente al marco de la ventana.
+- **Papelera, búsqueda y contraseña**: borrar manda a la papelera y se puede restaurar (una carpeta vuelve con todo su contenido); nada se borra del disco hasta vaciarla. Búsqueda por nombre en todo el drive, con la ruta de cada resultado. Y cada quien puede cambiar su propia contraseña, lo que además cierra las sesiones abiertas en otros equipos.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
 - **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
 - **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); importa/exporta `.xlsx` conservando todas las hojas, sus fórmulas y el formato de celda (color de relleno, color de letra, negrita/cursiva) (vía `exceljs`). La grilla crece según el contenido y dibuja solo las filas visibles, así que un libro de miles de filas se abre sin trabarse.
@@ -132,6 +133,7 @@ También hay un `run.bat` en la raíz para levantar el proyecto rápidamente en 
 | POST | `/api/auth/login` | Iniciar sesión; devuelve token de sesión |
 | POST | `/api/auth/logout` | Revocar el token actual |
 | GET | `/api/auth/me` | Datos del usuario conectado |
+| POST | `/api/auth/password` | Cambiar la propia contraseña (revoca las demás sesiones) |
 
 La primera cuenta que se registre adopta el escritorio y los archivos que ya existieran de antes de agregar el login, **y queda como administradora**; las cuentas siguientes arrancan con un escritorio vacío y sin permisos de admin.
 
@@ -225,7 +227,12 @@ Todos requieren la cabecera `Authorization: Bearer <token>` y actúan solo sobre
 | POST | `/files/upload` | Subir archivo binario |
 | GET | `/files/{file_id}/download` | Descargar archivo |
 | PATCH | `/files/{file_id}` | Renombrar/mover archivo |
-| DELETE | `/files/{file_id}` | Eliminar archivo |
+| DELETE | `/files/{file_id}` | Mandar archivo a la papelera |
+| GET | `/search?q=` | Buscar carpetas y archivos por nombre |
+| GET | `/trash` | Contenido de la papelera |
+| POST | `/trash/{folders\|files}/{id}/restore` | Restaurar |
+| DELETE | `/trash/{folders\|files}/{id}` | Eliminar definitivamente |
+| DELETE | `/trash` | Vaciar la papelera |
 
 Además: `GET /api/health` para chequeo de salud del servicio (no requiere sesión).
 

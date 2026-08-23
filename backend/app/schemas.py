@@ -92,6 +92,33 @@ class FolderContents(BaseModel):
     files: list[FileOut]
 
 
+class TrashItem(BaseModel):
+    """A file or folder in the trash, with where it came from."""
+
+    kind: str  # "file" | "folder"
+    id: int
+    name: str
+    size: int | None
+    content_type: str | None
+    location: str
+    deleted_at: datetime
+
+
+class SearchHit(BaseModel):
+    kind: str  # "file" | "folder"
+    id: int
+    name: str
+    folder_id: int | None
+    location: str
+    size: int | None
+    content_type: str | None
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
 # --- Chat (waSO) ---------------------------------------------------------
 
 

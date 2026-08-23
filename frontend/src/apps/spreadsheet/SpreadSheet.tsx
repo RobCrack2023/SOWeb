@@ -90,10 +90,15 @@ export function SpreadSheet({
 
   // The grid grows to fit whatever the sheet actually holds — an imported
   // workbook can run to thousands of rows.
+  // Keyed on the sheet itself: `cells` is rebuilt on every render when no sheet
+  // is active, which would defeat the memo.
   const { cols: COLS, rows: ROWS } = useMemo(() => {
     let maxCol = MIN_COLS - SLACK_COLS - 1;
     let maxRow = MIN_ROWS - SLACK_ROWS - 1;
-    const refs = new Set([...Object.keys(cells), ...Object.keys(active?.styles ?? {})]);
+    const refs = new Set([
+      ...Object.keys(active?.cells ?? {}),
+      ...Object.keys(active?.styles ?? {}),
+    ]);
     for (const ref of refs) {
       const p = parseRef(ref);
       if (!p) continue;
@@ -104,7 +109,7 @@ export function SpreadSheet({
       cols: Math.max(MIN_COLS, maxCol + 1 + SLACK_COLS),
       rows: Math.max(MIN_ROWS, maxRow + 1 + SLACK_ROWS),
     };
-  }, [cells, active?.styles]);
+  }, [active]);
 
   const loadSheets = (loaded: Sheet[]) => {
     setSheets(loaded);

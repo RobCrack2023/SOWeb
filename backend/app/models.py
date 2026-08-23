@@ -70,6 +70,8 @@ class Folder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     pos_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pos_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Set when the folder is in the trash; nothing is erased until it's emptied.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     parent: Mapped["Folder | None"] = relationship(remote_side=[id], back_populates="children")
     children: Mapped[list["Folder"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
@@ -173,5 +175,6 @@ class FileEntry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     pos_x: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pos_y: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     folder: Mapped["Folder"] = relationship(back_populates="files")

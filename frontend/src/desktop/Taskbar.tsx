@@ -3,6 +3,7 @@ import { useWindowStore } from "../windows/windowStore";
 import { getApp } from "../apps/registry";
 import { logout, type User } from "../lib/auth";
 import { useChatStore } from "../lib/chatStore";
+import { PasswordDialog } from "../auth/PasswordDialog";
 import { StartMenu } from "./StartMenu";
 import styles from "./Taskbar.module.css";
 
@@ -30,6 +31,7 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
   const { windows, openApp, focusWindow, minimizeWindow } = useWindowStore();
   const now = useClock();
   const [startOpen, setStartOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const topZ = windows.length ? Math.max(...windows.map((x) => x.zIndex)) : 0;
 
   const unread = useChatStore((s) => s.conversations.reduce((sum, c) => sum + c.unread, 0));
@@ -102,9 +104,13 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
             💬
             {unread > 0 && <span className={styles.chatBadge}>{unread > 99 ? "99+" : unread}</span>}
           </button>
-          <span className={styles.user} title={`Conectado como ${user.username}`}>
+          <button
+            className={styles.user}
+            onClick={() => setPasswordOpen(true)}
+            title={`Conectado como ${user.username} — clic para cambiar la contraseña`}
+          >
             👤 {user.username}
-          </span>
+          </button>
           <button className={styles.logout} onClick={handleLogout} title="Cerrar sesión">
             ⏻
           </button>
@@ -119,6 +125,8 @@ export function Taskbar({ user, onLogout }: { user: User; onLogout: () => void }
           </div>
         </div>
       </div>
+
+      {passwordOpen && <PasswordDialog onClose={() => setPasswordOpen(false)} />}
     </>
   );
 }
