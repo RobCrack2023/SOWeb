@@ -140,6 +140,92 @@ class AddMembers(BaseModel):
     member_ids: list[int] = Field(min_length=1)
 
 
+# --- Mail (mailSO) -------------------------------------------------------
+
+
+class MailAccountIn(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    email: str = Field(min_length=3, max_length=255)
+    protocol: str = "imap"
+    host: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    use_ssl: bool = True
+    username: str = Field(min_length=1, max_length=255)
+    # Optional on update: left empty means "keep the stored one".
+    password: str = ""
+
+    smtp_host: str = ""
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_ssl: bool = False
+    smtp_username: str = ""
+    smtp_password: str = ""
+
+
+class MailAccountOut(BaseModel):
+    """Never carries a password, in any form."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    label: str
+    email: str
+    protocol: str
+    host: str
+    port: int
+    use_ssl: bool
+    username: str
+    smtp_host: str
+    smtp_port: int
+    smtp_ssl: bool
+    smtp_username: str
+    created_at: datetime
+
+
+class MailAttachment(BaseModel):
+    index: int
+    filename: str
+    content_type: str
+    size: int
+    inline: bool
+
+
+class MailEnvelope(BaseModel):
+    uid: str
+    subject: str
+    from_name: str
+    from_email: str
+    date: str | None
+    seen: bool
+    has_attachments: bool
+
+
+class MailListOut(BaseModel):
+    messages: list[MailEnvelope]
+    total: int
+
+
+class MailMessageOut(BaseModel):
+    uid: str
+    subject: str
+    from_name: str
+    from_email: str
+    to: list[str]
+    cc: list[str]
+    date: datetime | None
+    text: str
+    html: str
+    message_id: str
+    attachments: list[MailAttachment]
+
+
+class SendMailIn(BaseModel):
+    to: list[str] = Field(default_factory=list)
+    cc: list[str] = Field(default_factory=list)
+    subject: str = ""
+    body: str = ""
+    in_reply_to: str = ""
+
+
 # --- Admin panel ---------------------------------------------------------
 
 

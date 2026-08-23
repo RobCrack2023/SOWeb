@@ -6,6 +6,7 @@ import { ShowSO } from "./presentation/ShowSO";
 import { PdfSO } from "./pdf/PdfSO";
 import { AdminPanel } from "./admin/AdminPanel";
 import { WaSO } from "./chat/WaSO";
+import { MailSO } from "./mail/MailSO";
 
 export interface AppDefinition {
   id: string;
@@ -64,6 +65,13 @@ export const APPS: AppDefinition[] = [
     icon: "💬",
     component: WaSO,
     defaultSize: { width: 860, height: 600 },
+  },
+  {
+    id: "mail",
+    title: "mailSO",
+    icon: "✉️",
+    component: MailSO,
+    defaultSize: { width: 980, height: 640 },
   },
   {
     id: "admin",

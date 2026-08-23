@@ -4,6 +4,8 @@ frontend/dist/
 
 # Backend
 backend/.venv/
+# Encryption key for stored mail credentials — must never be committed.
+backend/.secret_key
 backend/__pycache__/
 backend/**/__pycache__/
 backend/soweb.db

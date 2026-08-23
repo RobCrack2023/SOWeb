@@ -14,6 +14,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); importa/exporta `.xlsx` conservando todas las hojas, sus fórmulas y el formato de celda (color de relleno, color de letra, negrita/cursiva) (vía `exceljs`). La grilla crece según el contenido y dibuja solo las filas visibles, así que un libro de miles de filas se abre sin trabarse.
 - **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
 - **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
+- **mailSO** — cliente de correo para cuentas que ya tengas: IMAP o POP3 para leer, SMTP para enviar, con ajustes precargados para Gmail, Outlook y Yahoo. Carpetas, lista paginada, adjuntos, responder y eliminar. Las contraseñas se guardan cifradas y el HTML de cada mensaje se muestra aislado (ver más abajo).
 - **pdfSO** — visor y editor de PDF: edición de texto sobre el PDF que conserva la posición y apariencia original del texto reemplazado (vía `pdf-lib` + `pdfjs-dist`).
 - Todas las apps ofimáticas soportan múltiples instancias abiertas a la vez.
 
@@ -31,11 +32,14 @@ SOWeb/
 │       ├── auth.py        hashing de contraseñas y dependencias de sesión/admin
 │       ├── activity.py    registro de acciones para el panel de administración
 │       ├── chathub.py     sockets de chat abiertos, en memoria
+│       ├── crypto.py      cifrado de las contraseñas de correo guardadas
+│       ├── mail/          cliente IMAP/POP3, parseo MIME y envío SMTP
 │       └── routers/
 │           ├── auth.py      registro, login, logout
 │           ├── files.py     endpoints de carpetas y archivos (por usuario)
 │           ├── activity.py  eventos que reporta el navegador (apps abiertas)
 │           ├── chat.py      waSO: conversaciones, mensajes y WebSocket
+│           ├── mail.py      mailSO: cuentas, carpetas, mensajes y envío
 │           └── admin.py     supervisión: usuarios, sesiones, actividad
 │
 └── frontend/           SPA (React 19 + TypeScript + Vite)
@@ -47,6 +51,7 @@ SOWeb/
         │   ├── admin/           Panel de administración
         │   ├── chat/            waSO (chat, stickers animados)
         │   ├── file-explorer/   Explorador de archivos
+        │   ├── mail/            mailSO (cliente de correo)
         │   ├── text-editor/     writeSO
         │   ├── spreadsheet/     spreadSO
         │   ├── presentation/    showSO
@@ -149,6 +154,37 @@ Todos requieren sesión y solo operan sobre conversaciones de las que el usuario
 
 El WebSocket recibe el token en el **primer mensaje**, no en la URL, para que no quede registrado en el historial del navegador ni en los logs del servidor. El registro de sockets abiertos vive en memoria del proceso: correr varios workers de uvicorn requeriría un bus compartido (por ejemplo Redis pub/sub).
 
+### Correo / mailSO (`backend/app/routers/mail.py`)
+
+Todos requieren sesión y solo alcanzan las cuentas de correo del propio usuario.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/api/mail/accounts` | Cuentas configuradas (nunca devuelve contraseñas) |
+| POST | `/api/mail/accounts` | Agregar cuenta |
+| PUT | `/api/mail/accounts/{id}` | Editar cuenta (contraseña vacía = sin cambios) |
+| DELETE | `/api/mail/accounts/{id}` | Quitar cuenta |
+| POST | `/api/mail/accounts/test` | Probar la configuración antes de guardarla |
+| GET | `/api/mail/accounts/{id}/folders` | Carpetas del buzón |
+| GET | `/api/mail/accounts/{id}/messages` | Lista paginada (`folder`, `limit`, `offset`) |
+| GET | `/api/mail/accounts/{id}/messages/{uid}` | Mensaje completo |
+| GET | `.../messages/{uid}/attachments/{i}` | Descargar un adjunto |
+| POST | `.../messages/{uid}/seen` | Marcar leído / no leído |
+| DELETE | `/api/mail/accounts/{id}/messages/{uid}` | Eliminar del servidor |
+| POST | `/api/mail/accounts/{id}/send` | Enviar por SMTP |
+
+#### Conectar Gmail
+
+Gmail dejó de aceptar la contraseña normal por IMAP. Hay que activar la **verificación en 2 pasos** en la cuenta de Google, generar una **contraseña de aplicación** y usar esa en mailSO. También conviene confirmar que IMAP esté habilitado en la configuración de Gmail. Outlook y Yahoo piden lo mismo cuando tienen 2FA activo.
+
+#### Cómo se protege
+
+- **Contraseñas cifradas** con Fernet (`backend/app/crypto.py`). La clave vive fuera de la base: en la variable `SOWEB_SECRET_KEY` o, si no está, en `backend/.secret_key` (ignorado por git). Robar `soweb.db` no alcanza para leerlas. Si perdés la clave hay que volver a cargar las contraseñas; no se pierde correo, que vive en el servidor del proveedor.
+- **El HTML del correo nunca toca el DOM de SOWeb**: se muestra dentro de un `iframe` con `sandbox` sin `allow-scripts` ni `allow-same-origin`, y con un CSP `default-src 'none'`. El JavaScript de un mensaje no puede ejecutarse.
+- **Imágenes remotas bloqueadas** hasta que el lector las pida, porque cargarlas le avisa al remitente que abriste el mensaje.
+- **Los adjuntos se descargan siempre como `attachment`**, nunca en línea, para que el navegador no ejecute HTML o SVG ajeno en este origen.
+- El registro de actividad guarda que hubo un envío, nunca destinatarios ni contenido.
+
 ### Administración (`backend/app/routers/admin.py`)
 
 Requieren una cuenta admin; para el resto responden 403.
@@ -198,5 +234,6 @@ Además: `GET /api/health` para chequeo de salud del servicio (no requiere sesi�
 - Endurecer la autenticación: expiración de sesiones, cambio de contraseña, límite de intentos de login.
 - Panel de administración: cerrar sesiones de forma remota, dar de baja usuarios, filtrar el registro de actividad por fecha.
 - waSO: adjuntar archivos del Drive a un mensaje, buscar en el historial, confirmaciones de lectura y notificaciones del navegador.
+- mailSO: adjuntar archivos al enviar, buscar en el buzón, mover mensajes entre carpetas y OAuth2 para Gmail (evitaría la contraseña de aplicación).
 - Más apps de escritorio.
 - Ejecución de `.exe`: emulación x86 en WASM (v86/WebVM) o streaming remoto de una VM Windows.

@@ -76,6 +76,38 @@ class Folder(Base):
     files: Mapped[list["FileEntry"]] = relationship(back_populates="folder", cascade="all, delete-orphan")
 
 
+class MailAccount(Base):
+    """An external mailbox (Gmail, Outlook, a corporate server…) that mailSO
+    connects to on the user's behalf. Passwords are stored encrypted."""
+
+    __tablename__ = "mail_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    email: Mapped[str] = mapped_column(String(255))
+
+    # "imap" keeps mail on the server and has folders; "pop3" downloads from a
+    # single inbox and is only there for older providers.
+    protocol: Mapped[str] = mapped_column(String(8), default="imap")
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int] = mapped_column(Integer)
+    use_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
+    username: Mapped[str] = mapped_column(String(255))
+    password_enc: Mapped[str] = mapped_column(String(1024))
+
+    smtp_host: Mapped[str] = mapped_column(String(255), default="")
+    smtp_port: Mapped[int] = mapped_column(Integer, default=587)
+    # STARTTLS on 587 vs implicit TLS on 465.
+    smtp_ssl: Mapped[bool] = mapped_column(Boolean, default=False)
+    smtp_username: Mapped[str] = mapped_column(String(255), default="")
+    smtp_password_enc: Mapped[str] = mapped_column(String(1024), default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    owner: Mapped["User"] = relationship()
+
+
 class Conversation(Base):
     """A direct (two-person) chat or a named group."""
 
