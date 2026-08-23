@@ -322,6 +322,42 @@ async def upload_file(
     return entry
 
 
+@router.put("/files/{file_id}/binary", response_model=FileOut)
+async def replace_file_binary(
+    file_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Overwrite an existing file's bytes.
+
+    Apps that save a real binary format (a spreadsheet writing .xlsx) need to
+    update the file in place; the upload route would create a new one on every
+    save. Writes to a temporary name first so a failure mid-write can't leave
+    the stored file truncated.
+    """
+    entry = _get_file_or_404(db, file_id, user)
+
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    staging = STORAGE_DIR / f"{uuid.uuid4().hex}.part"
+    try:
+        with staging.open("wb") as out:
+            shutil.copyfileobj(file.file, out)
+        target = STORAGE_DIR / entry.storage_path
+        staging.replace(target)
+    except OSError as exc:
+        staging.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar: {exc}") from exc
+
+    entry.size = (STORAGE_DIR / entry.storage_path).stat().st_size
+    if file.content_type:
+        entry.content_type = file.content_type
+    activity.log(db, user.id, "file.save", entry.name)
+    db.commit()
+    db.refresh(entry)
+    return entry
+
+
 @router.get("/files/{file_id}/download")
 def download_file(
     file_id: int,

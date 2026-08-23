@@ -1,8 +1,10 @@
 /**
- * The spreadSO document: an ordered list of sheets.
+ * Reading the old spreadSO document format.
  *
- * Files saved before multi-sheet support held a bare `{ "A1": "..." }` map, so
- * `parseDocument` still accepts that shape and reads it as a single sheet.
+ * Workbooks are saved as real .xlsx now, so nothing writes this any more — but
+ * `.sosheet` files saved earlier still have to open. Two shapes exist: a
+ * `{ version: 2, sheets: [...] }` document, and, older still, a bare
+ * `{ "A1": "..." }` cell map from before multi-sheet support.
  */
 
 import type { Cells, CellStyles, Sheet } from "./formula";
@@ -95,17 +97,4 @@ export function parseDocument(content: string): Sheet[] {
   // Legacy single-sheet document.
   if (isCellMap(parsed)) return [makeSheet(DEFAULT_SHEET_NAME, parsed)];
   return blankWorkbook();
-}
-
-export function serializeDocument(sheets: Sheet[]): string {
-  const doc: DocumentV2 = {
-    version: 2,
-    sheets: sheets.map((s) => ({
-      name: s.name,
-      cells: s.cells,
-      // Omit the key entirely on unformatted sheets to keep files small.
-      ...(Object.keys(s.styles).length ? { styles: s.styles } : {}),
-    })),
-  };
-  return JSON.stringify(doc);
 }

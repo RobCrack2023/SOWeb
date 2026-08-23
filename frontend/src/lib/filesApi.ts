@@ -228,6 +228,20 @@ export function uploadBlob(folderId: number, name: string, blob: Blob): Promise<
   return uploadFile(folderId, new File([blob], name, { type: blob.type }));
 }
 
+/**
+ * Overwrite an existing file's bytes, for apps that save a real binary format.
+ * Uploading instead would leave a new copy behind on every save.
+ */
+export async function replaceFileBinary(
+  fileId: number,
+  name: string,
+  blob: Blob,
+): Promise<FileOut> {
+  const form = new FormData();
+  form.append("file", new File([blob], name, { type: blob.type }));
+  return apiFetch<FileOut>(`/files/${fileId}/binary`, { method: "PUT", body: form });
+}
+
 export function getDesktopId(): Promise<number> {
   return apiFetch<{ id: number }>(`/folders/desktop-id`).then((r) => r.id);
 }

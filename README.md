@@ -14,7 +14,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **Compartir archivos entre cuentas**: enviar un archivo a otro usuario con un mensaje. Le llega una copia a su carpeta «Recibidos» y un aviso por waSO. Es una copia, no acceso compartido: quien la recibe pasa a ser su dueño.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
 - **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
-- **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); importa/exporta `.xlsx` conservando todas las hojas, sus fórmulas y el formato de celda (color de relleno, color de letra, negrita/cursiva) (vía `exceljs`). La grilla crece según el contenido y dibuja solo las filas visibles, así que un libro de miles de filas se abre sin trabarse.
+- **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); **guarda directamente en `.xlsx`**, así que los archivos sirven fuera de SOWeb (Excel, LibreOffice, Sheets) sin exportar nada. Conserva todas las hojas, sus fórmulas y el formato de celda (color de relleno, color de letra, negrita/cursiva) (vía `exceljs`). La grilla crece según el contenido y dibuja solo las filas visibles, así que un libro de miles de filas se abre sin trabarse.
 - **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
 - **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
 - **mailSO** — cliente de correo para cuentas que ya tengas: IMAP o POP3 para leer, SMTP para enviar, con ajustes precargados para Gmail, Outlook y Yahoo. Carpetas, lista paginada, adjuntos, responder y eliminar. Las contraseñas se guardan cifradas y el HTML de cada mensaje se muestra aislado (ver más abajo).
@@ -230,7 +230,8 @@ Todos requieren la cabecera `Authorization: Bearer <token>` y actúan solo sobre
 | DELETE | `/folders/{folder_id}` | Eliminar carpeta |
 | POST | `/files` | Crear archivo (contenido inline) |
 | GET | `/files/{file_id}/content` | Leer contenido de archivo |
-| PUT | `/files/{file_id}/content` | Actualizar contenido de archivo |
+| PUT | `/files/{file_id}/content` | Actualizar contenido de texto |
+| PUT | `/files/{file_id}/binary` | Reemplazar los bytes (guardado de .xlsx) |
 | POST | `/files/upload` | Subir archivo binario |
 | GET | `/files/{file_id}/download` | Descargar archivo |
 | PATCH | `/files/{file_id}` | Renombrar/mover archivo |

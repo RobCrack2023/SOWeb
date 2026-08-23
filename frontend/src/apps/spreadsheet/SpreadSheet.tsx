@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   SHEET_EXT,
-  SHEET_MIME,
-  createTextFile,
   fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
-  updateFileContent,
+  replaceFileBinary,
   uploadBlob,
   type ImportRequest,
 } from "../../lib/filesApi";
-import { ensureExt, withExt } from "../../lib/names";
+import { ensureExt } from "../../lib/names";
 import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
@@ -22,7 +20,6 @@ import {
   nextSheetName,
   parseDocument,
   sanitizeSheetName,
-  serializeDocument,
   uniqueSheetName,
 } from "./workbook";
 import { SheetTabs } from "./SheetTabs";
@@ -39,6 +36,8 @@ const ROW_H = 24;
 /** Rows drawn beyond the viewport, to keep scrolling from flashing blanks. */
 const OVERSCAN = 12;
 const FALLBACK_NAME = "Hoja sin título";
+/** Workbooks are saved as real .xlsx so they're useful outside SOWeb too. */
+const XLSX_EXT = ".xlsx";
 
 export interface SpreadSheetProps {
   windowId?: string;
@@ -47,7 +46,18 @@ export interface SpreadSheetProps {
   importFrom?: ImportRequest;
 }
 
-const ensureSheetExt = (name: string) => ensureExt(name, SHEET_EXT, FALLBACK_NAME);
+/**
+ * The name a workbook is saved under. A legacy `.sosheet` has its extension
+ * swapped rather than appended, so converting one doesn't leave
+ * "ventas.sosheet.xlsx" behind.
+ */
+function sheetFileName(name: string): string {
+  const trimmed = name.trim() || FALLBACK_NAME;
+  if (trimmed.toLowerCase().endsWith(SHEET_EXT)) {
+    return `${trimmed.slice(0, -SHEET_EXT.length)}${XLSX_EXT}`;
+  }
+  return ensureExt(trimmed, XLSX_EXT, FALLBACK_NAME);
+}
 
 export function SpreadSheet({
   windowId,
@@ -68,6 +78,7 @@ export function SpreadSheet({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
   const savedNameRef = useRef<string | null>(null);
@@ -125,14 +136,16 @@ export function SpreadSheet({
       setName(doc.name);
       setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
-      setDirty(false);
+      // A legacy .sosheet counts as unsaved: saving rewrites it as .xlsx.
+      setDirty(doc.name.toLowerCase().endsWith(SHEET_EXT));
     });
   }, [initialFileId]);
 
-  // Opening an .xlsx converts it into a new, unsaved native sheet.
+  // An .xlsx from the drive opens as itself: saving writes back to the same
+  // file rather than leaving a second copy behind.
   useEffect(() => {
     if (!importFrom) return;
-    setBusy("Importando libro de Excel…");
+    setBusy("Abriendo libro de Excel…");
     fetchFileBytes(importFrom.id)
       .then(async (bytes) => {
         const { importXlsx } = await import("../../lib/office/xlsxIO");
@@ -140,13 +153,13 @@ export function SpreadSheet({
       })
       .then((imported) => {
         loadSheets(imported);
-        setName(withExt(importFrom.name, SHEET_EXT));
+        setName(importFrom.name);
         setFolderId(importFrom.folderId);
-        setFileId(undefined);
-        savedNameRef.current = null;
-        setDirty(true);
+        setFileId(importFrom.id);
+        savedNameRef.current = importFrom.name;
+        setDirty(false);
       })
-      .catch((err) => window.alert(`No se pudo importar: ${err}`))
+      .catch((err) => window.alert(`No se pudo abrir: ${err}`))
       .finally(() => setBusy(null));
   }, [importFrom]);
 
@@ -336,7 +349,7 @@ export function SpreadSheet({
     try {
       const { importXlsx } = await import("../../lib/office/xlsxIO");
       loadSheets(await importXlsx(await file.arrayBuffer()));
-      setName(withExt(file.name, SHEET_EXT));
+      setName(sheetFileName(file.name));
       setFileId(undefined);
       savedNameRef.current = null;
       setDirty(true);
@@ -347,47 +360,59 @@ export function SpreadSheet({
     }
   };
 
-  const exportToExcel = async () => {
-    const target = folderId ?? desktopIdRef.current;
-    if (target == null) return;
-    setBusy("Exportando a Excel…");
+  /** Save a copy to the real machine, rather than into SOWeb's drive. */
+  const downloadCopy = async () => {
+    setBusy("Preparando la descarga…");
     try {
       const { exportXlsx } = await import("../../lib/office/xlsxIO");
-      const xlsxName = withExt(name, ".xlsx");
       const blob = await exportXlsx(sheets);
-      await uploadBlob(target, xlsxName, blob);
-      notifyChange();
-      window.alert(`Exportado como ${xlsxName}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = sheetFileName(name);
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      window.alert(`No se pudo exportar: ${err}`);
+      window.alert(`No se pudo descargar: ${err}`);
     } finally {
       setBusy(null);
     }
   };
 
+  /**
+   * Saves a real .xlsx, so the file is useful outside SOWeb — openable in
+   * Excel, LibreOffice or Sheets without exporting first.
+   */
   const save = async () => {
     if (saving) return;
     setSaving(true);
+    setError(null);
     try {
-      const content = serializeDocument(sheets);
+      const { exportXlsx } = await import("../../lib/office/xlsxIO");
+      const blob = await exportXlsx(sheets);
+      const finalName = sheetFileName(name);
+
       if (fileId == null) {
         const target = folderId ?? desktopIdRef.current;
         if (target == null) return;
-        const created = await createTextFile(ensureSheetExt(name), target, content, SHEET_MIME);
+        const created = await uploadBlob(target, finalName, blob);
         setFileId(created.id);
         setName(created.name);
         savedNameRef.current = created.name;
       } else {
-        await updateFileContent(fileId, content);
-        const finalName = ensureSheetExt(name);
+        await replaceFileBinary(fileId, finalName, blob);
+        // A workbook opened from a legacy .sosheet gets renamed on first save,
+        // since what's now stored under that name is really an .xlsx.
         if (savedNameRef.current !== finalName) {
           await renameFile(fileId, finalName);
-          setName(finalName);
           savedNameRef.current = finalName;
         }
+        setName(finalName);
       }
       setDirty(false);
       notifyChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -417,8 +442,13 @@ export function SpreadSheet({
         <button className={styles.officeBtn} onClick={importFromDisk} disabled={!!busy} title="Abrir un .xlsx de tu equipo">
           📗 Abrir Excel
         </button>
-        <button className={styles.officeBtn} onClick={exportToExcel} disabled={!!busy} title="Guardar una copia .xlsx en SOWeb">
-          ⤓ Exportar .xlsx
+        <button
+          className={styles.officeBtn}
+          onClick={downloadCopy}
+          disabled={!!busy}
+          title="Bajar una copia .xlsx a tu equipo"
+        >
+          ⤓ Descargar
         </button>
         <button className={styles.saveBtn} onClick={save} disabled={saving || (!dirty && fileId != null)}>
           {saving ? "Guardando…" : dirty || fileId == null ? "💾 Guardar" : "✓ Guardado"}
@@ -426,6 +456,7 @@ export function SpreadSheet({
       </div>
 
       {busy && <div className={styles.busyBar}>{busy}</div>}
+      {error && <div className={styles.errorBar}>No se pudo guardar: {error}</div>}
 
       <div className={styles.formulaBar}>
         <span className={styles.cellName} title={`Hoja: ${active?.name ?? ""}`}>
