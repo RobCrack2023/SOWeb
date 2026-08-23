@@ -7,6 +7,8 @@ import { PdfSO } from "./pdf/PdfSO";
 import { AdminPanel } from "./admin/AdminPanel";
 import { WaSO } from "./chat/WaSO";
 import { MailSO } from "./mail/MailSO";
+import { MediaViewer } from "./viewer/MediaViewer";
+import { CodeEditor } from "./viewer/CodeEditor";
 
 export interface AppDefinition {
   id: string;
@@ -17,6 +19,8 @@ export interface AppDefinition {
   multiInstance?: boolean;
   /** Hidden from the desktop and start menu for non-admin accounts. */
   adminOnly?: boolean;
+  /** Never shown as an icon; only reachable by opening a file with it. */
+  hidden?: boolean;
 }
 
 export const APPS: AppDefinition[] = [
@@ -74,6 +78,24 @@ export const APPS: AppDefinition[] = [
     defaultSize: { width: 980, height: 640 },
   },
   {
+    id: "code-editor",
+    title: "Editor de texto",
+    icon: "📃",
+    component: CodeEditor,
+    defaultSize: { width: 820, height: 600 },
+    multiInstance: true,
+  },
+  {
+    // Opened from a file rather than from the desktop, so it stays off the grid.
+    id: "viewer",
+    title: "Visor",
+    icon: "🖼️",
+    component: MediaViewer,
+    defaultSize: { width: 880, height: 620 },
+    multiInstance: true,
+    hidden: true,
+  },
+  {
     id: "admin",
     title: "Administración",
     icon: "🛡️",
@@ -85,5 +107,6 @@ export const APPS: AppDefinition[] = [
 
 export const getApp = (appId: string) => APPS.find((a) => a.id === appId);
 
-/** The apps this account may see. */
-export const appsFor = (isAdmin: boolean) => APPS.filter((a) => !a.adminOnly || isAdmin);
+/** The apps this account may see as icons. */
+export const appsFor = (isAdmin: boolean) =>
+  APPS.filter((a) => !a.hidden && (!a.adminOnly || isAdmin));

@@ -14,7 +14,6 @@ import {
   type SearchHit,
   type TrashItem,
   iconForFile,
-  officeKind,
   moveFile,
   moveFolder,
   renameFile,
@@ -29,6 +28,7 @@ import { InlineEditLabel } from "../../ui/InlineEditLabel";
 import { nextFolderName } from "../../lib/names";
 import { startDrag, readDrag, type DndPayload } from "../../lib/dnd";
 import { useExternalDrop } from "../../lib/useExternalDrop";
+import { openFileWithApp } from "../../lib/openFile";
 import { DropOverlay } from "../../ui/DropOverlay";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
@@ -79,23 +79,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   const fsVersion = useFsStore((s) => s.version);
   const extDrop = useExternalDrop(() => notifyChange());
 
-  const openFileItem = (file: FileOut) => {
-    const appId = appForFile(file);
-    if (!appId) {
-      downloadToDisk(file).catch((err) => window.alert(String(err)));
-      return;
-    }
-    const kind = officeKind(file);
-    const app = getApp(appId)!;
-    openApp(appId, {
-      title: app.title,
-      ...app.defaultSize,
-      multiInstance: true,
-      props: kind
-        ? { importFrom: { id: file.id, name: file.name, kind, folderId: file.folder_id } }
-        : { fileId: file.id },
-    });
-  };
+  const openFileItem = (file: FileOut) => openFileWithApp(file);
 
   const newFileWith = (appId: string) => {
     if (currentFolderId == null) {

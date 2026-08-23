@@ -1,0 +1,137 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1e1f22;
+  color: #e6e6e6;
+  font-size: 13px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  background: #2a2c31;
+  border-bottom: 1px solid #3a3d43;
+}
+
+.nameInput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font: inherit;
+  color: #e6e6e6;
+  background: #1e1f22;
+  border: 1px solid #3a3d43;
+  border-radius: 5px;
+  outline: none;
+}
+
+.nameInput:focus {
+  border-color: #4c8bf5;
+}
+
+.bar button {
+  padding: 4px 10px;
+  font: inherit;
+  color: #e6e6e6;
+  background: #3a3d43;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bar button:hover:not(:disabled) {
+  background: #4a4e56;
+}
+
+.saveBtn {
+  background: #2f6fed !important;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: #2a63d4 !important;
+}
+
+.saveBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.gutter {
+  margin: 0;
+  padding: 10px 8px 10px 12px;
+  flex: 0 0 auto;
+  min-width: 44px;
+  overflow: hidden;
+  text-align: right;
+  color: #6b7079;
+  background: #232529;
+  border-right: 1px solid #3a3d43;
+  user-select: none;
+  font: inherit;
+  white-space: pre;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  font: inherit;
+  color: #e6e6e6;
+  background: #1e1f22;
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 2;
+}
+
+.wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.noWrap {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.status {
+  display: flex;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  color: #9aa0a8;
+  background: #2a2c31;
+  border-top: 1px solid #3a3d43;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: #1e1f22;
+  color: #cfd3d8;
+}
+
+.error {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #ffdcdc;
+  background: rgba(200, 40, 40, 0.35);
+}

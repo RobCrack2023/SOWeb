@@ -16,6 +16,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
 - **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
 - **mailSO** — cliente de correo para cuentas que ya tengas: IMAP o POP3 para leer, SMTP para enviar, con ajustes precargados para Gmail, Outlook y Yahoo. Carpetas, lista paginada, adjuntos, responder y eliminar. Las contraseñas se guardan cifradas y el HTML de cada mensaje se muestra aislado (ver más abajo).
+- **Visor y editor para el resto de los archivos**: imágenes con zoom y arrastre, reproductor de audio y video, y un editor de texto plano y código con numeración de líneas. Antes, cualquier archivo que no fuera de oficina solo se podía descargar.
 - **pdfSO** — visor y editor de PDF: edición de texto sobre el PDF que conserva la posición y apariencia original del texto reemplazado (vía `pdf-lib` + `pdfjs-dist`).
 - Todas las apps ofimáticas soportan múltiples instancias abiertas a la vez.
 
@@ -57,6 +58,7 @@ SOWeb/
         │   ├── spreadsheet/     spreadSO
         │   ├── presentation/    showSO
         │   ├── pdf/              pdfSO
+        │   ├── viewer/           visor de imágenes/audio/video y editor de código
         │   └── registry.tsx      registro central de apps instalables
         ├── lib/
         │   ├── api.ts, filesApi.ts   cliente HTTP hacia el backend

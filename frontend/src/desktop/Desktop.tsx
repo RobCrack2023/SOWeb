@@ -16,6 +16,7 @@ import { ContextMenu, type ContextMenuState } from "../ui/ContextMenu";
 import { nextFolderName } from "../lib/names";
 import { startDrag, readDrag, type DndPayload } from "../lib/dnd";
 import { useExternalDrop } from "../lib/useExternalDrop";
+import { openFileWithApp } from "../lib/openFile";
 import type { User } from "../lib/auth";
 import { DropOverlay } from "../ui/DropOverlay";
 import { useFsStore } from "../lib/fsStore";
@@ -37,7 +38,6 @@ import {
   getContents,
   getDesktopId,
   iconForFile,
-  officeKind,
   moveFile,
   moveFolder,
   renameFile,
@@ -201,23 +201,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
     });
   };
 
-  const openFile = (file: FileOut) => {
-    const appId = appForFile(file);
-    if (!appId) {
-      downloadToDisk(file).catch((err) => window.alert(String(err)));
-      return;
-    }
-    const kind = officeKind(file);
-    const app = getApp(appId)!;
-    openApp(appId, {
-      title: app.title,
-      ...app.defaultSize,
-      multiInstance: true,
-      props: kind
-        ? { importFrom: { id: file.id, name: file.name, kind, folderId: file.folder_id } }
-        : { fileId: file.id },
-    });
-  };
+  const openFile = (file: FileOut) => openFileWithApp(file);
 
   const newFileWith = (appId: string) => {
     if (desktopId == null) return;

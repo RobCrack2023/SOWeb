@@ -132,6 +132,37 @@ export function isPresentation(file: FileLike): boolean {
   return file.content_type === SLIDES_MIME || hasExt(file, SLIDES_EXT);
 }
 
+const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"];
+const VIDEO_EXTS = [".mp4", ".webm", ".ogv", ".mov", ".mkv"];
+const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"];
+const TEXT_EXTS = [
+  ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".json", ".xml", ".yml", ".yaml",
+  ".ini", ".cfg", ".conf", ".env", ".js", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go",
+  ".rs", ".java", ".c", ".h", ".cpp", ".cs", ".php", ".sh", ".bat", ".ps1", ".sql",
+  ".html", ".htm", ".css", ".scss", ".toml", ".gitignore",
+];
+
+const anyExt = (file: FileLike, exts: string[]) => exts.some((e) => hasExt(file, e));
+
+/** Media this can play or show, if any. */
+export type MediaKind = "image" | "audio" | "video";
+
+export function mediaKind(file: FileLike): MediaKind | null {
+  const type = (file.content_type || "").toLowerCase();
+  if (type.startsWith("image/") || anyExt(file, IMAGE_EXTS)) return "image";
+  if (type.startsWith("video/") || anyExt(file, VIDEO_EXTS)) return "video";
+  if (type.startsWith("audio/") || anyExt(file, AUDIO_EXTS)) return "audio";
+  return null;
+}
+
+export function isPlainText(file: FileLike): boolean {
+  const type = (file.content_type || "").toLowerCase();
+  if (type.startsWith("text/") || type === "application/json" || type === "application/xml") {
+    return true;
+  }
+  return anyExt(file, TEXT_EXTS);
+}
+
 /** Which desktop app opens this file on double-click, or null to download. */
 export function appForFile(file: FileLike): string | null {
   const office = officeKind(file);
@@ -143,6 +174,9 @@ export function appForFile(file: FileLike): string | null {
   if (isDocument(file)) return "text-editor";
   if (isSpreadsheet(file)) return "spreadsheet";
   if (isPresentation(file)) return "presentation";
+  if (mediaKind(file)) return "viewer";
+  // Checked after the native formats, whose extensions would also read as text.
+  if (isPlainText(file)) return "code-editor";
   return null;
 }
 
@@ -157,6 +191,11 @@ export function iconForFile(file: FileLike): string {
   if (isDocument(file)) return "📝";
   if (isSpreadsheet(file)) return "📊";
   if (isPresentation(file)) return "📽️";
+  const media = mediaKind(file);
+  if (media === "image") return "🖼️";
+  if (media === "video") return "🎬";
+  if (media === "audio") return "🎵";
+  if (isPlainText(file)) return "📃";
   return "📄";
 }
 
