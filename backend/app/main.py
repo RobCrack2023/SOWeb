@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import Base, engine, ensure_schema
-from .routers import activity, admin, auth, chat, files, mail
+from .routers import activity, admin, auth, chat, desk, files, mail
 
 Base.metadata.create_all(bind=engine)
 ensure_schema()
@@ -21,6 +21,7 @@ app.include_router(files.router)
 app.include_router(activity.router)
 app.include_router(chat.router)
 app.include_router(mail.router)
+app.include_router(desk.router)
 app.include_router(admin.router)
 
 

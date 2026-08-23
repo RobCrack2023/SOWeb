@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchFileBytes, type FileOut } from "../../lib/filesApi";
+import { fetchFileBytes } from "../../lib/filesApi";
 import { useWindowStore } from "../../windows/windowStore";
 import styles from "./MediaViewer.module.css";
 
@@ -153,19 +153,4 @@ export function MediaViewer({
       </div>
     </div>
   );
-}
-
-/** Kept beside the viewer so the registry and the file-type map agree. */
-export function mediaKindOf(file: Pick<FileOut, "name" | "content_type">): MediaKind | null {
-  const type = (file.content_type || "").toLowerCase();
-  const name = file.name.toLowerCase();
-  const ext = name.slice(name.lastIndexOf("."));
-
-  if (type.startsWith("image/") || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"].includes(ext))
-    return "image";
-  if (type.startsWith("video/") || [".mp4", ".webm", ".ogv", ".mov", ".mkv"].includes(ext))
-    return "video";
-  if (type.startsWith("audio/") || [".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac"].includes(ext))
-    return "audio";
-  return null;
 }

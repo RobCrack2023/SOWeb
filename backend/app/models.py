@@ -78,6 +78,41 @@ class Folder(Base):
     files: Mapped[list["FileEntry"]] = relationship(back_populates="folder", cascade="all, delete-orphan")
 
 
+class Note(Base):
+    """A sticky note pinned to the desktop."""
+
+    __tablename__ = "notes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    body: Mapped[str] = mapped_column(String(4000), default="")
+    color: Mapped[str] = mapped_column(String(16), default="amarillo")
+    pos_x: Mapped[int] = mapped_column(Integer, default=40)
+    pos_y: Mapped[int] = mapped_column(Integer, default=40)
+    width: Mapped[int] = mapped_column(Integer, default=220)
+    height: Mapped[int] = mapped_column(Integer, default=190)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    owner: Mapped["User"] = relationship()
+
+
+class CalendarEvent(Base):
+    __tablename__ = "calendar_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    notes: Mapped[str] = mapped_column(String(2000), default="")
+    # Stored as naive UTC, like every other timestamp here.
+    starts_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    all_day: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Minutes before the start to warn, or null for no reminder.
+    remind_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    owner: Mapped["User"] = relationship()
+
+
 class MailAccount(Base):
     """An external mailbox (Gmail, Outlook, a corporate server…) that mailSO
     connects to on the user's behalf. Passwords are stored encrypted."""

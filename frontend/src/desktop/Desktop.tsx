@@ -20,6 +20,8 @@ import { openFileWithApp } from "../lib/openFile";
 import type { User } from "../lib/auth";
 import { DropOverlay } from "../ui/DropOverlay";
 import { ShareDialog } from "../ui/ShareDialog";
+import { StickyNotes } from "./StickyNotes";
+import { Reminders } from "./Reminders";
 import { useFsStore } from "../lib/fsStore";
 import {
   CELL_W,
@@ -64,6 +66,12 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<Marquee>(null);
   const [sharing, setSharing] = useState<FileOut | null>(null);
+  // Set by StickyNotes so the desktop menu can add one.
+  const addNoteRef = useRef<(() => void) | null>(null);
+  // Stable, so mounting the notes doesn't re-run their register effect each render.
+  const registerAddNote = useCallback((add: () => void) => {
+    addNoteRef.current = add;
+  }, []);
   const [layout, setLayout] = useState<{
     apps: Record<string, IconPos>;
     folders: Record<number, IconPos>;
@@ -317,6 +325,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
         { label: "📊 Nueva hoja de cálculo", onClick: () => newFileWith("spreadsheet") },
         { label: "📽️ Nueva presentación", onClick: () => newFileWith("presentation") },
         { label: "📕 Abrir PDF", onClick: () => newFileWith("pdf") },
+        { label: "🗒️ Nueva nota", onClick: () => addNoteRef.current?.() },
         { label: "📁 Nueva carpeta", onClick: handleNewFolder },
         { label: "⬆ Subir archivo", onClick: handleUpload },
         { label: "🔄 Actualizar", onClick: () => notifyChange() },
@@ -442,6 +451,8 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
         })}
       </div>
 
+      <StickyNotes registerAdd={registerAddNote} />
+
       {marquee && (
         <div
           className={styles.marquee}
@@ -454,6 +465,8 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
           <Window key={w.id} win={w} />
         ))}
       </div>
+
+      <Reminders />
 
       <Taskbar user={user} onLogout={onLogout} />
 

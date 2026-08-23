@@ -114,6 +114,46 @@ class SearchHit(BaseModel):
     content_type: str | None
 
 
+class NoteIn(BaseModel):
+    body: str = Field(default="", max_length=4000)
+    color: str = "amarillo"
+    pos_x: int = 40
+    pos_y: int = 40
+    width: int = Field(default=220, ge=140, le=800)
+    height: int = Field(default=190, ge=120, le=800)
+
+
+class NoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    body: str
+    color: str
+    pos_x: int
+    pos_y: int
+    width: int
+    height: int
+
+
+class EventIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    notes: str = Field(default="", max_length=2000)
+    starts_at: datetime
+    all_day: bool = False
+    remind_minutes: int | None = Field(default=None, ge=0, le=10080)
+
+
+class EventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    notes: str
+    starts_at: datetime
+    all_day: bool
+    remind_minutes: int | None
+
+
 class ShareFile(BaseModel):
     """Send a copy of one of your files to another account."""
 

@@ -9,6 +9,7 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **Cuentas de usuario**: registro propio con usuario y contraseña, e inicio de sesión. **Cada cuenta tiene su propio Escritorio y sus propios archivos**, invisibles para las demás. Las contraseñas se guardan hasheadas (PBKDF2-SHA256) y la sesión usa un token revocable guardado en el servidor.
 - **Panel de administración** (🛡️, solo para cuentas admin): quién está conectado ahora, qué archivos creó cada usuario, cuánto espacio ocupa y un registro de actividad (inicios de sesión, archivos creados/guardados/subidos/eliminados, y qué apps se abren). Muestra únicamente metadatos: el admin no puede abrir ni descargar documentos de otras cuentas, ni leer conversaciones de waSO — de los mensajes solo ve cuántos hubo.
 - **Escritorio y gestor de ventanas**: iconos de escritorio, menú de inicio, barra de tareas, ventanas arrastrables y redimensionables (`react-rnd`), con el contenido recortado correctamente al marco de la ventana.
+- **Accesorios de escritorio**: calendario con eventos y recordatorios (avisan solos en la esquina), notas adhesivas que se pegan al escritorio y se guardan solas mientras escribís, y calculadora con historial.
 - **Papelera, búsqueda y contraseña**: borrar manda a la papelera y se puede restaurar (una carpeta vuelve con todo su contenido); nada se borra del disco hasta vaciarla. Búsqueda por nombre en todo el drive, con la ruta de cada resultado. Y cada quien puede cambiar su propia contraseña, lo que además cierra las sesiones abiertas en otros equipos.
 - **Compartir archivos entre cuentas**: enviar un archivo a otro usuario con un mensaje. Le llega una copia a su carpeta «Recibidos» y un aviso por waSO. Es una copia, no acceso compartido: quien la recibe pasa a ser su dueño.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
@@ -43,6 +44,7 @@ SOWeb/
 │           ├── activity.py  eventos que reporta el navegador (apps abiertas)
 │           ├── chat.py      waSO: conversaciones, mensajes y WebSocket
 │           ├── mail.py      mailSO: cuentas, carpetas, mensajes y envío
+│           ├── desk.py      notas adhesivas y calendario
 │           └── admin.py     supervisión: usuarios, sesiones, actividad
 │
 └── frontend/           SPA (React 19 + TypeScript + Vite)
@@ -52,6 +54,8 @@ SOWeb/
         ├── windows/        Window (marco de ventana) y windowStore (zustand)
         ├── apps/
         │   ├── admin/           Panel de administración
+        │   ├── calculator/      Calculadora
+        │   ├── calendar/        Calendario con recordatorios
         │   ├── chat/            waSO (chat, stickers animados)
         │   ├── file-explorer/   Explorador de archivos
         │   ├── mail/            mailSO (cliente de correo)

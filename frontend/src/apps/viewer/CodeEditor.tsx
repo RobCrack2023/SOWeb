@@ -5,7 +5,6 @@ import {
   getDesktopId,
   renameFile,
   updateFileContent,
-  type FileOut,
 } from "../../lib/filesApi";
 import { useFsStore } from "../../lib/fsStore";
 import { useWindowStore } from "../../windows/windowStore";
@@ -17,23 +16,6 @@ export interface CodeEditorProps {
   folderId?: number;
   name?: string;
   contentType?: string;
-}
-
-/** Extensions worth opening here rather than downloading. */
-const TEXT_EXTS = [
-  ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".json", ".xml", ".yml", ".yaml",
-  ".ini", ".cfg", ".conf", ".env", ".js", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go",
-  ".rs", ".java", ".c", ".h", ".cpp", ".cs", ".php", ".sh", ".bat", ".ps1", ".sql",
-  ".html", ".htm", ".css", ".scss", ".toml", ".gitignore",
-];
-
-export function isTextFile(file: Pick<FileOut, "name" | "content_type">): boolean {
-  const type = (file.content_type || "").toLowerCase();
-  if (type.startsWith("text/") || type === "application/json" || type === "application/xml") {
-    return true;
-  }
-  const name = file.name.toLowerCase();
-  return TEXT_EXTS.some((ext) => name.endsWith(ext));
 }
 
 /** Rough language label, shown in the status bar. */

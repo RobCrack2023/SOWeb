@@ -9,6 +9,8 @@ import { WaSO } from "./chat/WaSO";
 import { MailSO } from "./mail/MailSO";
 import { MediaViewer } from "./viewer/MediaViewer";
 import { CodeEditor } from "./viewer/CodeEditor";
+import { CalendarSO } from "./calendar/CalendarSO";
+import { Calculator } from "./calculator/Calculator";
 
 export interface AppDefinition {
   id: string;
@@ -76,6 +78,20 @@ export const APPS: AppDefinition[] = [
     icon: "✉️",
     component: MailSO,
     defaultSize: { width: 980, height: 640 },
+  },
+  {
+    id: "calendar",
+    title: "Calendario",
+    icon: "📅",
+    component: CalendarSO,
+    defaultSize: { width: 780, height: 560 },
+  },
+  {
+    id: "calculator",
+    title: "Calculadora",
+    icon: "🧮",
+    component: Calculator,
+    defaultSize: { width: 300, height: 470 },
   },
   {
     id: "code-editor",
