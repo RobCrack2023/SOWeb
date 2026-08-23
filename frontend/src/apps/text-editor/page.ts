@@ -61,6 +61,9 @@ export function matchSize(widthMm: number, heightMm: number): { sizeId: string; 
  * writeSO documents are stored as an envelope so page setup travels with the
  * text. Older files are plain HTML, so anything that isn't our JSON is treated
  * as content.
+ *
+ * Nothing writes this any more — documents are saved as real .docx — but
+ * `.sodoc` files saved earlier still have to open.
  */
 export interface StoredDoc {
   page: PageSetup;
@@ -80,8 +83,4 @@ export function parseStoredDoc(raw: string): StoredDoc {
     }
   }
   return { html: raw, page: DEFAULT_PAGE };
-}
-
-export function serialiseDoc(doc: StoredDoc): string {
-  return JSON.stringify({ version: 1, page: doc.page, html: doc.html });
 }

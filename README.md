@@ -13,9 +13,9 @@ Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shel
 - **Papelera, búsqueda y contraseña**: borrar manda a la papelera y se puede restaurar (una carpeta vuelve con todo su contenido); nada se borra del disco hasta vaciarla. Búsqueda por nombre en todo el drive, con la ruta de cada resultado. Y cada quien puede cambiar su propia contraseña, lo que además cierra las sesiones abiertas en otros equipos.
 - **Compartir archivos entre cuentas**: enviar un archivo a otro usuario con un mensaje. Le llega una copia a su carpeta «Recibidos» y un aviso por waSO. Es una copia, no acceso compartido: quien la recibe pasa a ser su dueño.
 - **Explorador de archivos (Drive)**: carpetas y archivos persistidos en una base de datos real (no solo en memoria), con crear/renombrar/mover/eliminar, subida de archivos y **drag & drop desde el escritorio real del sistema operativo** hacia el explorador web.
-- **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; importa y exporta `.docx` conservando tablas, color y subrayado; maneja tamaños de página.
+- **writeSO** — procesador de texto (basado en Tiptap): formato enriquecido, tablas, alineación, subrayado y color; **guarda directamente en `.docx`**, abrible en Word o Google Docs sin exportar. Como los lectores de `.docx` descartan el formato directo al releer, el documento del editor viaja incrustado dentro del paquete y writeSO lo recupera sin perder color ni alineación (ver más abajo). Maneja tamaños de página.
 - **spreadSO** — hoja de cálculo con motor de fórmulas propio y **libros de varias hojas** (pestañas para crear, renombrar y eliminar), incluidas referencias entre hojas (`Ventas!B4`, o `'Resumen 2026'!B3` si el nombre lleva espacios); **guarda directamente en `.xlsx`**, así que los archivos sirven fuera de SOWeb (Excel, LibreOffice, Sheets) sin exportar nada. Conserva todas las hojas, sus fórmulas y el formato de celda (color de relleno, color de letra, negrita/cursiva) (vía `exceljs`). La grilla crece según el contenido y dibuja solo las filas visibles, así que un libro de miles de filas se abre sin trabarse.
-- **showSO** — editor de presentaciones con modo presentador; exporta a `.pptx` (vía `pptxgenjs`).
+- **showSO** — editor de presentaciones con modo presentador; **guarda directamente en `.pptx`** (vía `pptxgenjs`), y lo relee conservando texto, posición, tamaño, negrita, cursiva, alineación, color y fondo.
 - **waSO** — chat entre cuentas de SOWeb, en tiempo real por WebSocket: conversaciones 1 a 1 y grupos, historial persistido, contador de no leídos en la barra de tareas, indicador de "escribiendo…", presencia en línea y **stickers animados** (emoji + animación CSS, sin archivos de imagen).
 - **mailSO** — cliente de correo para cuentas que ya tengas: IMAP o POP3 para leer, SMTP para enviar, con ajustes precargados para Gmail, Outlook y Yahoo. Carpetas, lista paginada, adjuntos, responder y eliminar. Las contraseñas se guardan cifradas y el HTML de cada mensaje se muestra aislado (ver más abajo).
 - **Visor y editor para el resto de los archivos**: imágenes con zoom y arrastre, reproductor de audio y video, y un editor de texto plano y código con numeración de líneas. Antes, cualquier archivo que no fuera de oficina solo se podía descargar.
@@ -185,6 +185,24 @@ Todos requieren sesión y solo alcanzan las cuentas de correo del propio usuario
 #### Conectar Gmail
 
 Gmail dejó de aceptar la contraseña normal por IMAP. Hay que activar la **verificación en 2 pasos** en la cuenta de Google, generar una **contraseña de aplicación** y usar esa en mailSO. También conviene confirmar que IMAP esté habilitado en la configuración de Gmail. Outlook y Yahoo piden lo mismo cuando tienen 2FA activo.
+
+#### Por qué un .docx lleva algo extra adentro
+
+Los lectores de `.docx` (mammoth, el que usa writeSO) convierten el documento
+*semánticamente* y descartan el formato directo: color de texto, alineación de
+párrafo y sombreado de encabezados de tabla se pierden al releer. Como writeSO
+ahora guarda en `.docx`, eso significaría perder esos atributos en cada
+guardado.
+
+Por eso el documento del editor viaja como una parte extra dentro del paquete
+(`soweb/document.json`). Word y cualquier otro lector la ignoran; writeSO la usa
+para reabrir sus propios archivos sin pérdida. Solo se confía en ella si nadie
+más escribió el archivo desde entonces: cualquier otro editor reescribe
+`lastModifiedBy`, y a partir de ahí manda lo que ese editor dejó escrito.
+
+showSO no necesita nada de esto: su modelo (texto, posición, tamaño, negrita,
+cursiva, alineación, color, fondo) se escribe y se relee completo desde el
+`.pptx`.
 
 #### Cómo se protege
 

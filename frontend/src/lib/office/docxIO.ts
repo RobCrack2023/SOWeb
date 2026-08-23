@@ -28,16 +28,57 @@ const STYLE_MAP = [
   "p[style-name='Título 3'] => h3:fresh",
 ].join("\n");
 
+/**
+ * writeSO saves real .docx files, but mammoth reads them semantically and
+ * drops direct formatting — reopening one would lose text colour, paragraph
+ * alignment and table header shading on every save.
+ *
+ * So the editor's own document is tucked into the package as an extra part.
+ * Word ignores it, while writeSO reopens its own files losslessly. It is only
+ * trusted when nothing else has written the file since: any other editor
+ * rewrites `lastModifiedBy`, and then mammoth's reading is the honest one.
+ */
+const SIDECAR_PATH = "soweb/document.json";
+const SIDECAR_AUTHOR = "SOWeb — writeSO";
+
 export interface ImportedDocx {
   html: string;
   /** Page geometry read from the document, so imports keep their real size. */
   page: { sizeId: string; landscape: boolean } | null;
+  /** The exact TipTap document, when this .docx was last written by writeSO. */
+  doc?: unknown;
 }
 
 export async function importDocx(bytes: ArrayBuffer): Promise<ImportedDocx> {
+  const page = await readPageSize(bytes);
+
+  const sidecar = await readSidecar(bytes);
+  if (sidecar !== null) return { html: "", page, doc: sidecar };
+
   const mammoth = await import("mammoth");
   const result = await mammoth.convertToHtml({ arrayBuffer: bytes }, { styleMap: STYLE_MAP });
-  return { html: result.value, page: await readPageSize(bytes) };
+  return { html: result.value, page };
+}
+
+/** The embedded document, or null when absent or no longer trustworthy. */
+async function readSidecar(bytes: ArrayBuffer): Promise<unknown | null> {
+  try {
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(bytes.slice(0));
+
+    const core = zip.file("docProps/core.xml");
+    if (!core) return null;
+    const xml = await core.async("string");
+    const lastBy = /<cp:lastModifiedBy>([^<]*)<\/cp:lastModifiedBy>/.exec(xml)?.[1] ?? "";
+    // Someone else saved over it; what they wrote is the real content now.
+    if (lastBy.trim() !== SIDECAR_AUTHOR) return null;
+
+    const part = zip.file(SIDECAR_PATH);
+    if (!part) return null;
+    return JSON.parse(await part.async("string"));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -244,6 +285,9 @@ export async function exportDocx(
 
   const file = new Document({
     title,
+    creator: SIDECAR_AUTHOR,
+    // Read back on import to tell "writeSO wrote this last" from "Word did".
+    lastModifiedBy: SIDECAR_AUTHOR,
     numbering: {
       config: [
         {
@@ -280,6 +324,15 @@ export async function exportDocx(
     ],
   });
 
-  const blob = await Packer.toBlob(file);
-  return new Blob([blob], { type: DOCX_MIME });
+  const packed = await Packer.toBlob(file);
+
+  // Tuck the editor's own document alongside the Word parts. A .docx is a zip,
+  // and an unreferenced entry is ignored by every reader that isn't looking
+  // for it.
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(await packed.arrayBuffer());
+  zip.file(SIDECAR_PATH, JSON.stringify(doc));
+  const withSidecar = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+
+  return new Blob([withSidecar], { type: DOCX_MIME });
 }

@@ -6,16 +6,15 @@ import { TableKit } from "@tiptap/extension-table";
 import { TextStyle, Color } from "@tiptap/extension-text-style";
 import {
   DOC_EXT,
-  createTextFile,
   fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
-  updateFileContent,
+  replaceFileBinary,
   uploadBlob,
   type ImportRequest,
 } from "../../lib/filesApi";
-import { ensureExt, withExt } from "../../lib/names";
+import { ensureExt } from "../../lib/names";
 import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
@@ -25,7 +24,6 @@ import {
   mmToPx,
   pageDimsMm,
   parseStoredDoc,
-  serialiseDoc,
   type PageSetup,
 } from "./page";
 import styles from "./TextEditor.module.css";
@@ -40,7 +38,21 @@ export interface TextEditorProps {
   importFrom?: ImportRequest;
 }
 
-const ensureDocExt = (name: string) => ensureExt(name, DOC_EXT, FALLBACK_NAME);
+/** Documents are saved as real .docx so they're useful outside SOWeb too. */
+const DOCX_EXT = ".docx";
+
+/**
+ * The name a document is saved under. A legacy `.sodoc` has its extension
+ * swapped rather than appended, so converting one doesn't leave
+ * "informe.sodoc.docx" behind.
+ */
+function docFileName(name: string): string {
+  const trimmed = name.trim() || FALLBACK_NAME;
+  if (trimmed.toLowerCase().endsWith(DOC_EXT)) {
+    return `${trimmed.slice(0, -DOC_EXT.length)}${DOCX_EXT}`;
+  }
+  return ensureExt(trimmed, DOCX_EXT, FALLBACK_NAME);
+}
 
 export function TextEditor({
   windowId,
@@ -95,30 +107,33 @@ export function TextEditor({
       setName(doc.name);
       setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
-      setDirty(false);
+      // A legacy .sodoc counts as unsaved: saving rewrites it as .docx.
+      setDirty(doc.name.toLowerCase().endsWith(DOC_EXT));
     });
   }, [editor, initialFileId]);
 
-  // Opening a .docx converts it into a new, unsaved native document, leaving
-  // the original Word file untouched.
+  // A .docx from the drive opens as itself: saving writes back to the same
+  // file rather than leaving a second copy behind.
   useEffect(() => {
     if (!editor || !importFrom) return;
-    setBusy("Importando documento de Word…");
+    setBusy("Abriendo documento de Word…");
     fetchFileBytes(importFrom.id)
       .then(async (bytes) => {
         const { importDocx } = await import("../../lib/office/docxIO");
         return importDocx(bytes);
       })
       .then((imported) => {
-        editor.commands.setContent(imported.html || "");
+        // A file writeSO itself wrote carries the exact editor document;
+        // otherwise fall back to what mammoth could read.
+        editor.commands.setContent((imported.doc as never) ?? imported.html ?? "");
         if (imported.page) setPage((p) => ({ ...p, ...imported.page! }));
-        setName(withExt(importFrom.name, DOC_EXT));
+        setName(importFrom.name);
         setFolderId(importFrom.folderId);
-        setFileId(undefined);
-        savedNameRef.current = null;
-        setDirty(true);
+        setFileId(importFrom.id);
+        savedNameRef.current = importFrom.name;
+        setDirty(false);
       })
-      .catch((err) => window.alert(`No se pudo importar: ${err}`))
+      .catch((err) => window.alert(`No se pudo abrir: ${err}`))
       .finally(() => setBusy(null));
   }, [editor, importFrom]);
 
@@ -140,9 +155,9 @@ export function TextEditor({
     try {
       const { importDocx } = await import("../../lib/office/docxIO");
       const imported = await importDocx(await file.arrayBuffer());
-      editor.commands.setContent(imported.html || "");
+      editor.commands.setContent((imported.doc as never) ?? imported.html ?? "");
       if (imported.page) setPage((p) => ({ ...p, ...imported.page! }));
-      setName(withExt(file.name, DOC_EXT));
+      setName(docFileName(file.name));
       setFileId(undefined);
       savedNameRef.current = null;
       setDirty(true);
@@ -153,54 +168,67 @@ export function TextEditor({
     }
   };
 
-  const exportToWord = async () => {
+  /** Build the .docx for the current document, page setup included. */
+  const buildDocx = async (): Promise<Blob> => {
+    const { exportDocx } = await import("../../lib/office/docxIO");
+    const dims = pageDimsMm(page);
+    return exportDocx(editor!.getJSON(), docFileName(name), {
+      ...dims,
+      marginMm: page.marginMm,
+    });
+  };
+
+  /** Save a copy to the real machine, rather than into SOWeb's drive. */
+  const downloadCopy = async () => {
     if (!editor) return;
-    const target = folderId ?? desktopIdRef.current;
-    if (target == null) return;
-    setBusy("Exportando a Word…");
+    setBusy("Preparando la descarga…");
     try {
-      const { exportDocx } = await import("../../lib/office/docxIO");
-      const docxName = withExt(name, ".docx");
-      const dims = pageDimsMm(page);
-      const blob = await exportDocx(editor.getJSON(), docxName, {
-        ...dims,
-        marginMm: page.marginMm,
-      });
-      await uploadBlob(target, docxName, blob);
-      notifyChange();
-      window.alert(`Exportado como ${docxName}`);
+      const url = URL.createObjectURL(await buildDocx());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = docFileName(name);
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      window.alert(`No se pudo exportar: ${err}`);
+      window.alert(`No se pudo descargar: ${err}`);
     } finally {
       setBusy(null);
     }
   };
 
+  /**
+   * Saves a real .docx, so the file opens in Word or Google Docs without
+   * exporting first. The editor's own document rides along inside the package
+   * so reopening it here loses nothing.
+   */
   const save = async () => {
     if (!editor || saving) return;
     setSaving(true);
     try {
-      // Stored as an envelope so the page setup travels with the text.
-      const payload = serialiseDoc({ page, html: editor.getHTML() });
+      const blob = await buildDocx();
+      const finalName = docFileName(name);
+
       if (fileId == null) {
         const target = folderId ?? desktopIdRef.current;
         if (target == null) return;
-        const finalName = ensureDocExt(name);
-        const created = await createTextFile(finalName, target, payload);
+        const created = await uploadBlob(target, finalName, blob);
         setFileId(created.id);
         setName(created.name);
         savedNameRef.current = created.name;
       } else {
-        await updateFileContent(fileId, payload);
-        const finalName = ensureDocExt(name);
+        await replaceFileBinary(fileId, finalName, blob);
+        // A document opened from a legacy .sodoc gets renamed on first save,
+        // since what's now stored under that name is really a .docx.
         if (savedNameRef.current !== finalName) {
           await renameFile(fileId, finalName);
-          setName(finalName);
           savedNameRef.current = finalName;
         }
+        setName(finalName);
       }
       setDirty(false);
       notifyChange();
+    } catch (err) {
+      window.alert(`No se pudo guardar: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -235,8 +263,8 @@ export function TextEditor({
         <button className={styles.officeBtn} onClick={importFromDisk} disabled={!!busy} title="Abrir un .docx de tu equipo">
           📘 Abrir Word
         </button>
-        <button className={styles.officeBtn} onClick={exportToWord} disabled={!!busy} title="Guardar una copia .docx en SOWeb">
-          ⤓ Exportar .docx
+        <button className={styles.officeBtn} onClick={downloadCopy} disabled={!!busy} title="Bajar una copia .docx a tu equipo">
+          ⤓ Descargar
         </button>
         <button className={styles.saveBtn} onClick={save} disabled={saving || (!dirty && fileId != null)}>
           {saving ? "Guardando…" : dirty || fileId == null ? "💾 Guardar" : "✓ Guardado"}

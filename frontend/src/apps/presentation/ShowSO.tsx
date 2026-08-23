@@ -2,17 +2,15 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { Rnd } from "react-rnd";
 import {
   SLIDES_EXT,
-  SLIDES_MIME,
-  createTextFile,
   fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
-  updateFileContent,
+  replaceFileBinary,
   uploadBlob,
   type ImportRequest,
 } from "../../lib/filesApi";
-import { ensureExt, withExt } from "../../lib/names";
+import { ensureExt } from "../../lib/names";
 import { pickLocalFile } from "../../lib/office/pick";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
@@ -44,7 +42,21 @@ export interface ShowSOProps {
   importFrom?: ImportRequest;
 }
 
-const ensureSlidesExt = (name: string) => ensureExt(name, SLIDES_EXT, FALLBACK_NAME);
+/** Decks are saved as real .pptx so they're useful outside SOWeb too. */
+const PPTX_EXT = ".pptx";
+
+/**
+ * The name a deck is saved under. A legacy `.soslides` has its extension
+ * swapped rather than appended, so converting one doesn't leave
+ * "charla.soslides.pptx" behind.
+ */
+function deckFileName(name: string): string {
+  const trimmed = name.trim() || FALLBACK_NAME;
+  if (trimmed.toLowerCase().endsWith(SLIDES_EXT)) {
+    return `${trimmed.slice(0, -SLIDES_EXT.length)}${PPTX_EXT}`;
+  }
+  return ensureExt(trimmed, PPTX_EXT, FALLBACK_NAME);
+}
 
 /** Keep a box inside the logical slide canvas. */
 function clampBox(x: number, y: number, w: number, h: number) {
@@ -91,14 +103,16 @@ export function ShowSO({
       setFolderId(doc.folder_id);
       savedNameRef.current = doc.name;
       setCurrent(0);
-      setDirty(false);
+      // A legacy .soslides counts as unsaved: saving rewrites it as .pptx.
+      setDirty(doc.name.toLowerCase().endsWith(SLIDES_EXT));
     });
   }, [initialFileId]);
 
-  // Opening a .pptx converts it into a new, unsaved native deck.
+  // A .pptx from the drive opens as itself: saving writes back to the same
+  // file rather than leaving a second copy behind.
   useEffect(() => {
     if (!importFrom) return;
-    setBusy("Importando presentación de PowerPoint…");
+    setBusy("Abriendo presentación de PowerPoint…");
     fetchFileBytes(importFrom.id)
       .then(async (bytes) => {
         const { importPptx } = await import("../../lib/office/pptxIO");
@@ -106,14 +120,14 @@ export function ShowSO({
       })
       .then((imported) => {
         setDeck(imported);
-        setName(withExt(importFrom.name, SLIDES_EXT));
+        setName(importFrom.name);
         setFolderId(importFrom.folderId);
-        setFileId(undefined);
+        setFileId(importFrom.id);
         setCurrent(0);
-        savedNameRef.current = null;
-        setDirty(true);
+        savedNameRef.current = importFrom.name;
+        setDirty(false);
       })
-      .catch((err) => window.alert(`No se pudo importar: ${err}`))
+      .catch((err) => window.alert(`No se pudo abrir: ${err}`))
       .finally(() => setBusy(null));
   }, [importFrom]);
 
@@ -217,7 +231,7 @@ export function ShowSO({
     try {
       const { importPptx } = await import("../../lib/office/pptxIO");
       setDeck(await importPptx(await file.arrayBuffer()));
-      setName(withExt(file.name, SLIDES_EXT));
+      setName(deckFileName(file.name));
       setFileId(undefined);
       setCurrent(0);
       savedNameRef.current = null;
@@ -229,47 +243,58 @@ export function ShowSO({
     }
   };
 
-  const exportToPowerPoint = async () => {
-    const target = folderId ?? desktopIdRef.current;
-    if (target == null) return;
-    setBusy("Exportando a PowerPoint…");
+  /** Save a copy to the real machine, rather than into SOWeb's drive. */
+  const downloadCopy = async () => {
+    setBusy("Preparando la descarga…");
     try {
       const { exportPptx } = await import("../../lib/office/pptxIO");
-      const pptxName = withExt(name, ".pptx");
-      const blob = await exportPptx(deck, withExt(name, ""));
-      await uploadBlob(target, pptxName, blob);
-      notifyChange();
-      window.alert(`Exportado como ${pptxName}`);
+      const blob = await exportPptx(deck, deckFileName(name));
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = deckFileName(name);
+      link.click();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      window.alert(`No se pudo exportar: ${err}`);
+      window.alert(`No se pudo descargar: ${err}`);
     } finally {
       setBusy(null);
     }
   };
 
+  /**
+   * Saves a real .pptx, so the deck opens in PowerPoint or Google Slides
+   * without exporting first.
+   */
   const save = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      const content = JSON.stringify(deck);
+      const { exportPptx } = await import("../../lib/office/pptxIO");
+      const finalName = deckFileName(name);
+      const blob = await exportPptx(deck, finalName);
+
       if (fileId == null) {
         const target = folderId ?? desktopIdRef.current;
         if (target == null) return;
-        const created = await createTextFile(ensureSlidesExt(name), target, content, SLIDES_MIME);
+        const created = await uploadBlob(target, finalName, blob);
         setFileId(created.id);
         setName(created.name);
         savedNameRef.current = created.name;
       } else {
-        await updateFileContent(fileId, content);
-        const finalName = ensureSlidesExt(name);
+        await replaceFileBinary(fileId, finalName, blob);
+        // A deck opened from a legacy .soslides gets renamed on first save,
+        // since what's now stored under that name is really a .pptx.
         if (savedNameRef.current !== finalName) {
           await renameFile(fileId, finalName);
-          setName(finalName);
           savedNameRef.current = finalName;
         }
+        setName(finalName);
       }
       setDirty(false);
       notifyChange();
+    } catch (err) {
+      window.alert(`No se pudo guardar: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -309,8 +334,8 @@ export function ShowSO({
         <button className={styles.officeBtn} onClick={importFromDisk} disabled={!!busy} title="Abrir un .pptx de tu equipo">
           📙 Abrir PowerPoint
         </button>
-        <button className={styles.officeBtn} onClick={exportToPowerPoint} disabled={!!busy} title="Guardar una copia .pptx en SOWeb">
-          ⤓ Exportar .pptx
+        <button className={styles.officeBtn} onClick={downloadCopy} disabled={!!busy} title="Bajar una copia .pptx a tu equipo">
+          ⤓ Descargar
         </button>
         <button className={styles.presentBtn} onClick={() => setPresenting(true)} title="Presentar (F5)">
           ▶ Presentar
