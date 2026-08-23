@@ -19,6 +19,7 @@ import { useExternalDrop } from "../lib/useExternalDrop";
 import { openFileWithApp } from "../lib/openFile";
 import type { User } from "../lib/auth";
 import { DropOverlay } from "../ui/DropOverlay";
+import { ShareDialog } from "../ui/ShareDialog";
 import { useFsStore } from "../lib/fsStore";
 import {
   CELL_W,
@@ -62,6 +63,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
   const [renaming, setRenaming] = useState<Renaming>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marquee, setMarquee] = useState<Marquee>(null);
+  const [sharing, setSharing] = useState<FileOut | null>(null);
   const [layout, setLayout] = useState<{
     apps: Record<string, IconPos>;
     folders: Record<number, IconPos>;
@@ -346,6 +348,7 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
         ...(appForFile(file)
           ? [{ label: "📂 Abrir", onClick: () => openFile(file) }]
           : []),
+        { label: "📤 Compartir…", onClick: () => setSharing(file) },
         {
           label: "⬇ Descargar",
           onClick: () => downloadToDisk(file).catch((err) => window.alert(String(err))),
@@ -459,6 +462,8 @@ export function Desktop({ user, onLogout }: { user: User; onLogout: () => void }
         label="Soltá para copiar al Escritorio"
         progress={extDrop.progress}
       />
+
+      {sharing && <ShareDialog file={sharing} onClose={() => setSharing(null)} />}
 
       {contextMenu && <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />}
     </div>

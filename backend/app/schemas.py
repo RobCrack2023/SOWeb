@@ -114,6 +114,13 @@ class SearchHit(BaseModel):
     content_type: str | None
 
 
+class ShareFile(BaseModel):
+    """Send a copy of one of your files to another account."""
+
+    to_user_id: int
+    note: str = Field(default="", max_length=500)
+
+
 class PasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=6, max_length=128)

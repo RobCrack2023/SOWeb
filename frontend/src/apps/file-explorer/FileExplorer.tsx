@@ -30,6 +30,7 @@ import { startDrag, readDrag, type DndPayload } from "../../lib/dnd";
 import { useExternalDrop } from "../../lib/useExternalDrop";
 import { openFileWithApp } from "../../lib/openFile";
 import { DropOverlay } from "../../ui/DropOverlay";
+import { ShareDialog } from "../../ui/ShareDialog";
 import { useWindowStore } from "../../windows/windowStore";
 import { useFsStore } from "../../lib/fsStore";
 import { getApp } from "../registry";
@@ -73,6 +74,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [trash, setTrash] = useState<TrashItem[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState<FileOut | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openApp = useWindowStore((s) => s.openApp);
   const notifyChange = useFsStore((s) => s.notifyChange);
@@ -306,6 +308,7 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
         ...(appForFile(file)
           ? [{ label: "📂 Abrir", onClick: () => openFileItem(file) }]
           : []),
+        { label: "📤 Compartir…", onClick: () => setSharing(file) },
         {
           label: "⬇ Descargar",
           onClick: () => downloadToDisk(file).catch((err) => window.alert(String(err))),
@@ -620,6 +623,8 @@ export function FileExplorer({ initialFolderId = null }: FileExplorerProps) {
         }
         progress={extDrop.progress}
       />
+
+      {sharing && <ShareDialog file={sharing} onClose={() => setSharing(null)} />}
 
       {contextMenu && <ContextMenu state={contextMenu} onClose={() => setContextMenu(null)} />}
     </div>

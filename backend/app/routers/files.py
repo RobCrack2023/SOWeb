@@ -11,6 +11,7 @@ from .. import activity
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import Folder, FileEntry, User
+from .chat import notify_direct
 from ..schemas import (
     FolderCreate,
     FolderRename,
@@ -22,6 +23,7 @@ from ..schemas import (
     FileContentUpdate,
     FolderContents,
     SearchHit,
+    ShareFile,
     TrashItem,
 )
 
@@ -609,3 +611,90 @@ def search(
             )
         )
     return hits
+
+
+# --- Compartir entre cuentas ----------------------------------------------
+
+
+RECEIVED_FOLDER = "Recibidos"
+
+
+@router.get("/users", response_model=list[dict])
+def list_share_targets(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Accounts a file can be sent to — everyone but yourself."""
+    rows = db.query(User).filter(User.id != user.id).order_by(User.username).all()
+    return [{"id": u.id, "username": u.username} for u in rows]
+
+
+@router.post("/files/{file_id}/share", response_model=FileOut)
+async def share_file(
+    file_id: int,
+    payload: ShareFile,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Send a copy to another account.
+
+    A copy rather than shared access: accounts are otherwise fully isolated,
+    and granting cross-account read would mean permission checks on every
+    path that touches a file. The recipient owns what they receive.
+    """
+    entry = _get_file_or_404(db, file_id, user)
+    if payload.to_user_id == user.id:
+        raise HTTPException(status_code=400, detail="Ese archivo ya es tuyo")
+
+    target = db.get(User, payload.to_user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    source = STORAGE_DIR / entry.storage_path
+    if not source.exists():
+        raise HTTPException(status_code=404, detail="El archivo ya no está en el servidor")
+
+    # Everything received lands in one folder on the recipient's desktop.
+    desktop = get_or_create_desktop(db, target)
+    inbox = (
+        db.query(Folder)
+        .filter(
+            Folder.owner_id == target.id,
+            Folder.parent_id == desktop.id,
+            Folder.name == RECEIVED_FOLDER,
+            Folder.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if inbox is None:
+        inbox = Folder(name=RECEIVED_FOLDER, parent_id=desktop.id, owner_id=target.id)
+        db.add(inbox)
+        db.flush()
+
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}_{entry.name}"
+    shutil.copyfile(source, STORAGE_DIR / stored_name)
+
+    copy = FileEntry(
+        name=entry.name,
+        folder_id=inbox.id,
+        size=entry.size,
+        content_type=entry.content_type,
+        storage_path=stored_name,
+    )
+    db.add(copy)
+    # Logged without the recipient: the panel counts shares, it doesn't map
+    # who talks to whom.
+    activity.log(db, user.id, "file.share", entry.name)
+    db.commit()
+    db.refresh(copy)
+
+    # Tell them through waSO, which they already watch. A failure here must
+    # not undo a share that already happened.
+    note = payload.note.strip()
+    text = f"📎 Te compartí «{entry.name}» — está en tu carpeta {RECEIVED_FOLDER}."
+    if note:
+        text += f"\n{note}"
+    try:
+        await notify_direct(db, user, target.id, text)
+    except Exception:
+        pass
+
+    return copy

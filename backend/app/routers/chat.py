@@ -131,6 +131,50 @@ def _describe(db: DbSession, conversation: Conversation, viewer: User) -> ChatCo
     )
 
 
+async def notify_direct(db: DbSession, sender: User, recipient_id: int, text: str) -> None:
+    """Drop a message into the direct chat between two users, opening it if
+    they've never spoken. Used by other features (a shared file, say) to tell
+    someone something happened, through the channel they already watch."""
+    mine = (
+        db.query(ConversationMember.conversation_id)
+        .join(Conversation, Conversation.id == ConversationMember.conversation_id)
+        .filter(ConversationMember.user_id == sender.id, Conversation.kind == "direct")
+        .subquery()
+    )
+    conversation = (
+        db.query(Conversation)
+        .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
+        .filter(Conversation.id.in_(mine), ConversationMember.user_id == recipient_id)
+        .first()
+    )
+    if conversation is None:
+        conversation = Conversation(kind="direct", created_by=sender.id)
+        db.add(conversation)
+        db.flush()
+        db.add_all(
+            [
+                ConversationMember(conversation_id=conversation.id, user_id=sender.id),
+                ConversationMember(conversation_id=conversation.id, user_id=recipient_id),
+            ]
+        )
+        db.flush()
+
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=sender.id,
+        kind="text",
+        body=text[:4000],
+    )
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+
+    out = _as_message(message, sender.username)
+    await hub.send(
+        [recipient_id], {"type": "message", "message": out.model_dump(mode="json")}
+    )
+
+
 @router.get("/contacts", response_model=list[ChatContact])
 def contacts(db: DbSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Everyone you can start a conversation with — i.e. every other account."""

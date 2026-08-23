@@ -356,3 +356,19 @@ export const emptyTrash = () => apiFetch<void>("/trash", { method: "DELETE" });
 
 export const searchDrive = (query: string) =>
   apiFetch<SearchHit[]>(`/search?q=${encodeURIComponent(query)}`);
+
+// --- Compartir entre cuentas -----------------------------------------------
+
+export interface ShareTarget {
+  id: number;
+  username: string;
+}
+
+export const listShareTargets = () => apiFetch<ShareTarget[]>("/users");
+
+export const shareFile = (fileId: number, toUserId: number, note: string) =>
+  apiFetch<FileOut>(`/files/${fileId}/share`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to_user_id: toUserId, note }),
+  });
