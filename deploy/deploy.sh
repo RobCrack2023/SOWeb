@@ -30,12 +30,18 @@ fi
 
 echo "==> Reiniciando $SERVICE"
 systemctl restart "$SERVICE"
-sleep 2
 
 echo "==> Verificando"
-if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
-    echo "OK: el backend responde."
-else
-    echo "FALLA: el backend no responde. Revisá: journalctl -u $SERVICE -n 50"
-    exit 1
-fi
+# El arranque tarda unos segundos, y no siempre los mismos: esperar un plazo
+# fijo daba por caído un backend que todavía estaba levantando, y ese falso
+# fallo cortaba el resto del despliegue.
+for _ in $(seq 30); do
+    if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+        echo "OK: el backend responde."
+        exit 0
+    fi
+    sleep 1
+done
+
+echo "FALLA: el backend no respondió en 30s. Revisá: journalctl -u $SERVICE -n 50"
+exit 1
