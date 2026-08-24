@@ -292,14 +292,21 @@ Pasos, una sola vez:
 5. Emitir el certificado: `sudo certbot --nginx -d tu-dominio`.
 6. Programar `deploy/backup.sh` en cron.
 
-Cada actualización posterior:
+Cada actualización posterior, **desde tu máquina**:
 
 ```bash
-cd /opt/soweb && sudo -u soweb git pull && sudo ./deploy/deploy.sh
+bash deploy/publish.sh
 ```
+
+Compila el frontend localmente, sube el resultado, actualiza el backend en el
+servidor y verifica que el sitio responda.
 
 ### Detalles que importan
 
+- **El frontend se compila fuera del servidor.** `publish.sh` lo construye en
+  tu máquina y sube solo `dist/`. En un VPS chico —el nuestro tiene 957 MB de
+  RAM, sin swap, compartido con otros servicios— un `npm ci` puede disparar el
+  OOM killer, y Linux elegiría a cualquiera como víctima.
 - **Un solo worker de uvicorn.** El registro de sockets de waSO vive en memoria
   del proceso: con varios workers, quien esté conectado a uno no recibiría los
   mensajes que entran por otro. Escalar a más de uno pide un bus compartido
