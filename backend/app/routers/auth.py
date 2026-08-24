@@ -2,15 +2,52 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session as DbSession
 
-from .. import activity
+import secrets
+import time
+
+from .. import activity, settings
 from ..auth import create_session, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Folder, Session, User
-from ..schemas import Credentials, LoginOut, PasswordChange, UserOut
+from ..schemas import AuthInfo, Credentials, LoginOut, PasswordChange, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _bearer = HTTPBearer(auto_error=False)
+
+# Failed logins per username: {name: (count, first_failure_at)}. In-process,
+# which suits the single-worker deployment; several workers would each keep
+# their own tally.
+_failures: dict[str, tuple[int, float]] = {}
+
+
+def _locked_out(username: str) -> int:
+    """Seconds left before this username may try again, or 0."""
+    entry = _failures.get(username)
+    if entry is None:
+        return 0
+    count, since = entry
+    if count < settings.LOGIN_MAX_ATTEMPTS:
+        return 0
+    remaining = int(settings.LOGIN_LOCKOUT_SECONDS - (time.time() - since))
+    if remaining <= 0:
+        _failures.pop(username, None)
+        return 0
+    return remaining
+
+
+def _record_failure(username: str) -> None:
+    count, since = _failures.get(username, (0, time.time()))
+    # Start a fresh window once the previous lockout has expired.
+    if time.time() - since > settings.LOGIN_LOCKOUT_SECONDS:
+        count, since = 0, time.time()
+    _failures[username] = (count + 1, since)
+
+
+@router.get("/info", response_model=AuthInfo)
+def info():
+    """Lets the login screen ask for an invite code only when one is needed."""
+    return AuthInfo(invite_required=bool(settings.INVITE_CODE))
 
 
 def _adopt_legacy_content(db: DbSession, user: User) -> None:
@@ -27,6 +64,12 @@ def _adopt_legacy_content(db: DbSession, user: User) -> None:
 @router.post("/register", response_model=LoginOut, status_code=201)
 def register(payload: Credentials, db: DbSession = Depends(get_db)):
     username = payload.username.strip()
+    # A private instance is gated by a code the owner sets; comparison is
+    # constant-time so the code can't be guessed a character at a time.
+    if settings.INVITE_CODE and not secrets.compare_digest(
+        payload.invite.strip(), settings.INVITE_CODE
+    ):
+        raise HTTPException(status_code=403, detail="El código de invitación no es válido")
     if db.query(User).filter(User.username == username).first() is not None:
         raise HTTPException(status_code=409, detail="Ese usuario ya existe")
 
@@ -59,10 +102,20 @@ def register(payload: Credentials, db: DbSession = Depends(get_db)):
 
 @router.post("/login", response_model=LoginOut)
 def login(payload: Credentials, db: DbSession = Depends(get_db)):
-    user = db.query(User).filter(User.username == payload.username.strip()).first()
+    username = payload.username.strip()
+    wait = _locked_out(username)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Demasiados intentos fallidos. Probá de nuevo en {wait} segundos.",
+        )
+
+    user = db.query(User).filter(User.username == username).first()
     # Same message either way: don't reveal which usernames exist.
     if user is None or not verify_password(payload.password, user.password_hash):
+        _record_failure(username)
         raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+    _failures.pop(username, None)
     activity.log(db, user.id, "login")
     db.commit()
     return LoginOut(token=create_session(db, user), user=UserOut.model_validate(user))

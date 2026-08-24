@@ -30,6 +30,7 @@ SOWeb/
 │   ├── manage.py      CLI: listar usuarios, promover/quitar admin
 │   └── app/
 │       ├── main.py        punto de entrada, CORS, montaje de routers
+│       ├── settings.py    configuración por variables de entorno
 │       ├── models.py      modelos ORM: User, Session, Activity, Folder, FileEntry
 │       ├── schemas.py     esquemas Pydantic
 │       ├── database.py    engine/sesión de SQLAlchemy + migración de columnas
@@ -46,6 +47,8 @@ SOWeb/
 │           ├── mail.py      mailSO: cuentas, carpetas, mensajes y envío
 │           ├── desk.py      notas adhesivas y calendario
 │           └── admin.py     supervisión: usuarios, sesiones, actividad
+│
+├── deploy/            nginx, systemd, scripts de despliegue y respaldo
 │
 └── frontend/           SPA (React 19 + TypeScript + Vite)
     └── src/
@@ -120,7 +123,7 @@ npm install
 npm run dev
 ```
 
-Abrir [http://localhost:5173](http://localhost:5173). El backend debe estar corriendo en el puerto 8000 (CORS ya configurado para `localhost:5173`).
+Abrir [http://localhost:5173](http://localhost:5173). El backend debe estar corriendo en el puerto 8000: Vite hace de proxy de `/api` hacia él, así que el navegador ve un solo origen — igual que en producción, y sin CORS de por medio.
 
 La primera vez aparece la pantalla de acceso: usá "Registrate" para crear una cuenta (usuario de 3+ caracteres, contraseña de 6+) y entrás directo al escritorio. La sesión queda guardada en el navegador, así que recargar no vuelve a pedir la contraseña.
 
@@ -262,9 +265,58 @@ Todos requieren la cabecera `Authorization: Bearer <token>` y actúan solo sobre
 
 Además: `GET /api/health` para chequeo de salud del servicio (no requiere sesión).
 
+## Puesta en producción
+
+El repo trae en `deploy/` todo lo necesario. El esquema es: nginx sirve el
+frontend compilado y hace de proxy al backend bajo `/api`, así que **todo vive
+en un mismo origen** — sin CORS, y el WebSocket de waSO viaja como `wss://`
+por la misma conexión TLS.
+
+```
+/opt/soweb        el repositorio
+/var/www/soweb    el frontend compilado
+/var/lib/soweb    base de datos y archivos (sobreviven a cada despliegue)
+/etc/soweb.env    configuración y secretos
+```
+
+Pasos, una sola vez:
+
+1. Crear el usuario del servicio y los directorios:
+   `sudo useradd -r -s /usr/sbin/nologin soweb && sudo install -d -o soweb -g soweb /var/lib/soweb`
+2. Clonar el repo en `/opt/soweb`.
+3. Copiar `deploy/soweb.env.example` a `/etc/soweb.env`, generar la clave de
+   cifrado y elegir el código de invitación. **Guardá una copia de la clave**:
+   sin ella las contraseñas de correo guardadas quedan ilegibles.
+4. Instalar `deploy/soweb.service`, `deploy/nginx.conf` y
+   `deploy/nginx-upgrade-map.conf` (cada archivo trae sus instrucciones arriba).
+5. Emitir el certificado: `sudo certbot --nginx -d tu-dominio`.
+6. Programar `deploy/backup.sh` en cron.
+
+Cada actualización posterior:
+
+```bash
+cd /opt/soweb && sudo -u soweb git pull && sudo ./deploy/deploy.sh
+```
+
+### Detalles que importan
+
+- **Un solo worker de uvicorn.** El registro de sockets de waSO vive en memoria
+  del proceso: con varios workers, quien esté conectado a uno no recibiría los
+  mensajes que entran por otro. Escalar a más de uno pide un bus compartido
+  (Redis pub/sub).
+- **HTTPS no es opcional.** Por la conexión viajan contraseñas de SOWeb, tokens
+  de sesión y las credenciales de correo de mailSO.
+- **Registro cerrado por código.** Con `SOWEB_INVITE_CODE` puesto, crear cuenta
+  exige ese código; la pantalla de acceso pregunta al servidor si hace falta y
+  muestra el campo solo entonces. Vacío = registro abierto a cualquiera.
+- **Intentos de login limitados** por usuario (8 en 5 minutos por defecto),
+  para que la pantalla de acceso no sea un blanco fácil de fuerza bruta.
+- **SQLite** aguanta bien este uso; si algún día hay muchas escrituras a la vez,
+  el cambio natural es PostgreSQL.
+
 ## Próximos pasos
 
-- Endurecer la autenticación: expiración de sesiones, cambio de contraseña, límite de intentos de login.
+- Endurecer la autenticación: expiración automática de sesiones (hoy un token vive hasta que se cierra sesión o se cambia la contraseña).
 - Panel de administración: cerrar sesiones de forma remota, dar de baja usuarios, filtrar el registro de actividad por fecha.
 - waSO: adjuntar archivos del Drive a un mensaje, buscar en el historial, confirmaciones de lectura y notificaciones del navegador.
 - mailSO: adjuntar archivos al enviar, buscar en el buzón, mover mensajes entre carpetas y OAuth2 para Gmail (evitaría la contraseña de aplicación).

@@ -6,6 +6,14 @@ from pydantic import BaseModel, ConfigDict, Field
 class Credentials(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=6, max_length=128)
+    # Only checked on register, and only when the server asks for one.
+    invite: str = Field(default="", max_length=128)
+
+
+class AuthInfo(BaseModel):
+    """What the login screen needs before anyone types anything."""
+
+    invite_required: bool
 
 
 class UserOut(BaseModel):

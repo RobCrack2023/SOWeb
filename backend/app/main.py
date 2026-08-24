@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import settings
 from .database import Base, engine, ensure_schema
 from .routers import activity, admin, auth, chat, desk, files, mail
 
@@ -9,12 +10,15 @@ ensure_schema()
 
 app = FastAPI(title="SOWeb API")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Served from its own origin behind a reverse proxy, the frontend needs no
+# CORS at all; the middleware is only added when origins are configured.
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(auth.router)
 app.include_router(files.router)

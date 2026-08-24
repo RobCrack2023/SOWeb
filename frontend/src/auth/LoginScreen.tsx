@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { login, register, type User } from "../lib/auth";
+import { useEffect, useState, type FormEvent } from "react";
+import { authInfo, login, register, type User } from "../lib/auth";
 import styles from "./LoginScreen.module.css";
 
 type Mode = "login" | "register";
@@ -9,8 +9,15 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [invite, setInvite] = useState("");
+  const [inviteRequired, setInviteRequired] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // A private instance asks for a code; ask the server rather than guessing.
+  useEffect(() => {
+    authInfo().then((info) => setInviteRequired(info.invite_required));
+  }, []);
 
   const isRegister = mode === "register";
 
@@ -38,10 +45,16 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
       setError("Las contraseñas no coinciden.");
       return;
     }
+    if (isRegister && inviteRequired && !invite.trim()) {
+      setError("Necesitás un código de invitación para crear una cuenta.");
+      return;
+    }
 
     setBusy(true);
     try {
-      const user = isRegister ? await register(name, password) : await login(name, password);
+      const user = isRegister
+        ? await register(name, password, invite.trim())
+        : await login(name, password);
       onAuthenticated(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -84,6 +97,19 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
             disabled={busy}
           />
         </label>
+
+        {isRegister && inviteRequired && (
+          <label className={styles.field}>
+            <span className={styles.labelText}>Código de invitación</span>
+            <input
+              className={styles.input}
+              value={invite}
+              onChange={(e) => setInvite(e.target.value)}
+              autoComplete="off"
+              disabled={busy}
+            />
+          </label>
+        )}
 
         {isRegister && (
           <label className={styles.field}>

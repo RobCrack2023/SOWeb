@@ -1,5 +1,5 @@
 import { getToken } from "./auth";
-import { API_BASE } from "./config";
+import { websocketUrl } from "./config";
 import type { ChatMessage } from "./chatApi";
 
 export type ChatEvent =
@@ -11,7 +11,7 @@ export type ChatEvent =
   /** Emitted locally, not by the server, so the UI can show it lost the link. */
   | { type: "closed" };
 
-const WS_URL = `${API_BASE.replace(/^http/, "ws")}/chat/ws`;
+const WS_URL = websocketUrl("/chat/ws");
 
 /** Backoff between reconnection attempts, in ms. */
 const RETRY_MIN = 1000;

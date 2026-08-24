@@ -1,0 +1,41 @@
+# SOWeb — servicio del backend.
+#
+#   sudo cp deploy/soweb.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now soweb
+#   sudo systemctl status soweb
+#   journalctl -u soweb -f          # ver los logs
+
+[Unit]
+Description=SOWeb API
+After=network.target
+
+[Service]
+Type=simple
+User=soweb
+Group=soweb
+WorkingDirectory=/opt/soweb/backend
+
+# Las variables (código de invitación, clave de cifrado, rutas de datos) van
+# acá, fuera del repositorio. Ver deploy/soweb.env.example.
+EnvironmentFile=/etc/soweb.env
+
+# Un solo worker, a propósito: el registro de sockets de waSO vive en memoria
+# del proceso, así que con varios workers un usuario conectado a uno no
+# recibiría los mensajes que entran por otro.
+ExecStart=/opt/soweb/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers \
+    --forwarded-allow-ips=127.0.0.1
+
+Restart=always
+RestartSec=3
+
+# Endurecimiento básico: el servicio solo puede escribir donde vive su data.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/soweb
+
+[Install]
+WantedBy=multi-user.target

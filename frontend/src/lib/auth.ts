@@ -39,11 +39,27 @@ export function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function submit(path: string, username: string, password: string): Promise<User> {
+/** Whether this server gates registration behind a code. */
+export async function authInfo(): Promise<{ invite_required: boolean }> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/info`);
+    if (res.ok) return await res.json();
+  } catch {
+    /* offline: assume no code and let the attempt report the real error */
+  }
+  return { invite_required: false };
+}
+
+async function submit(
+  path: string,
+  username: string,
+  password: string,
+  invite = "",
+): Promise<User> {
   const res = await fetch(`${API_BASE}/auth${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, invite }),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.detail ?? "No se pudo completar la operación");
@@ -53,8 +69,8 @@ async function submit(path: string, username: string, password: string): Promise
   return data.user;
 }
 
-export const register = (username: string, password: string) =>
-  submit("/register", username, password);
+export const register = (username: string, password: string, invite = "") =>
+  submit("/register", username, password, invite);
 
 export const login = (username: string, password: string) => submit("/login", username, password);
 

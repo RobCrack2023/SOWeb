@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, 
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from .. import activity
+from .. import activity, settings
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import Folder, FileEntry, User
@@ -29,7 +29,7 @@ from ..schemas import (
 
 router = APIRouter(prefix="/api", tags=["files"])
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+STORAGE_DIR = settings.STORAGE_DIR
 
 
 def _now() -> datetime:
