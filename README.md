@@ -2,7 +2,10 @@
 
 Un "sistema operativo" de escritorio dentro del navegador: ventanas arrastrables/redimensionables, explorador de archivos con persistencia real en backend, y una suite ofimática propia (procesador de texto, hoja de cálculo, presentaciones y editor de PDF) compatible con los formatos de Microsoft Office.
 
-Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shell (escritorio, ventanas, archivos) y las apps de productividad; a futuro se plantea sumar autenticación multiusuario y, más adelante, ejecución de programas nativos vía emulación o streaming.
+Es el primer paso hacia la idea de "un SO en el navegador": hoy resuelve el shell (escritorio, ventanas, archivos), las cuentas de usuario y las apps —oficina, chat, correo—; más adelante se plantea ejecutar programas nativos vía emulación o streaming.
+
+> **En producción:** <https://soweb.iot-robotics.cl>
+> Para retomar el trabajo, ver [SIGUIENTE.md](SIGUIENTE.md).
 
 ## Características
 
