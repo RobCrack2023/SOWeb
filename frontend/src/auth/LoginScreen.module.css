@@ -135,8 +135,10 @@
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.1);
+  /* Sin la variante -webkit-: al declarar las dos, el minificador conserva
+     solo la prefijada y descarta esta, y los navegadores actuales soportan
+     la estándar pero no la prefijada — el vidrio se perdía en producción. */
   backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
   box-shadow:
     0 28px 70px rgba(0, 0, 0, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.24);
