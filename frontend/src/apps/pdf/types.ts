@@ -42,6 +42,13 @@ export interface TextEdit extends BaseEdit {
    */
   baseline: number;
   family: FontFamily;
+  /**
+   * The run this edit replaced, kept at the coordinates it had when it was
+   * picked so saving can cut it out of the page's content stream. Dragging the
+   * box must not touch these: they are how the original is located, not where
+   * the replacement now sits. Absent on text added from scratch.
+   */
+  replaces?: { x: number; baseline: number; width: number };
 }
 
 export interface RectEdit extends BaseEdit {

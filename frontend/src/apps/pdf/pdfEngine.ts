@@ -5,7 +5,8 @@
  * only pulled in when pdfSO actually opens a document.
  */
 
-import type { FontFamily, PdfDocState, PdfEdit, Rgb } from "./types";
+import { stripTextRuns, type TextRun } from "./contentStream";
+import type { FontFamily, PdfDocState, PdfEdit, Rgb, TextEdit } from "./types";
 
 export interface TextSpan {
   str: string;
@@ -294,11 +295,81 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
  * Write out a new PDF: original pages are copied verbatim (so their content is
  * bit-for-bit preserved) and our edits are drawn on top.
  */
-export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): Promise<Blob> {
-  const { PDFDocument, StandardFonts, rgb, degrees } = await import("pdf-lib");
+export interface SavedPdf {
+  blob: Blob;
+  /**
+   * Replaced runs whose original text could not be cut from the page, and so
+   * is only covered. Nonzero means the file still carries text the document no
+   * longer shows — the reader has to be told.
+   */
+  coveredOnly: number;
+}
+
+export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): Promise<SavedPdf> {
+  const { PDFDocument, StandardFonts, rgb, degrees, PDFArray, PDFName, PDFRawStream, decodePDFRawStream } =
+    await import("pdf-lib");
+
+  const latin1 = (bytes: Uint8Array) => {
+    // Chunked: one apply() over a megabyte-long stream blows the call stack.
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 8192) {
+      out += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
+    return out;
+  };
+  const toBytes = (text: string) => {
+    const bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i += 1) bytes[i] = text.charCodeAt(i) & 0xff;
+    return bytes;
+  };
+
+  /**
+   * Cut the runs a text edit replaced out of the page itself. Covering them
+   * only hides them: the characters stay in the file, and copy-paste or a text
+   * search still turns up whatever was supposedly replaced.
+   *
+   * Anything unexpected in the stream leaves the page exactly as it was —
+   * a document that still reads correctly beats one we mangled trying.
+   */
+  const removeRuns = (page: Page, runs: TextRun[]): number => {
+    try {
+      const node = page.node;
+      const contents = node.Contents();
+      if (!contents) return 0;
+
+      const streams =
+        contents instanceof PDFArray
+          ? contents.asArray().map((ref) => node.context.lookup(ref))
+          : [contents];
+
+      const parts: string[] = [];
+      for (const stream of streams) {
+        if (!(stream instanceof PDFRawStream)) return 0;
+        parts.push(latin1(decodePDFRawStream(stream).decode()));
+      }
+
+      // pdf.js reports positions relative to the crop box, so a page whose box
+      // does not start at the origin needs its runs shifted back into the user
+      // space the content stream is written in.
+      const box = page.getCropBox();
+      const shifted = runs.map((r) => ({ ...r, x: r.x + box.x }));
+
+      const { content, removed } = stripTextRuns(parts.join("\n"), shifted, box.y + box.height);
+      if (removed === 0) return 0;
+
+      node.set(PDFName.of("Contents"), node.context.register(node.context.flateStream(toBytes(content))));
+      return removed;
+    } catch {
+      return 0;
+    }
+  };
 
   const src = await PDFDocument.load(originalBytes.slice(0), { ignoreEncryption: true });
   const out = await PDFDocument.create();
+
+  type Page = Awaited<ReturnType<typeof out.copyPages>>[number];
+
+  let coveredOnly = 0;
 
   const kept = state.pages.filter((p) => !p.deleted);
   const copied = await out.copyPages(
@@ -340,6 +411,13 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
 
     const { height } = page.getSize();
     const edits = state.edits.filter((e) => e.page === pageState.sourceIndex);
+
+    // Before anything is drawn: pdf-lib appends its own content stream, and
+    // rewriting Contents afterwards would throw those drawings away.
+    const replaced = edits
+      .filter((e): e is TextEdit => e.kind === "text" && e.replaces !== undefined)
+      .map((e) => e.replaces!);
+    if (replaced.length > 0) coveredOnly += replaced.length - removeRuns(page, replaced);
 
     for (const edit of edits) {
       // Our model is top-left origin; PDF is bottom-left.
@@ -393,7 +471,10 @@ export async function savePdf(originalBytes: ArrayBuffer, state: PdfDocState): P
   }
 
   const bytes = await out.save();
-  return new Blob([bytes as unknown as BlobPart], { type: "application/pdf" });
+  return {
+    blob: new Blob([bytes as unknown as BlobPart], { type: "application/pdf" }),
+    coveredOnly,
+  };
 }
 
 /**

@@ -41,6 +41,12 @@ import styles from "./PdfSO.module.css";
 const FALLBACK_NAME = "Documento.pdf";
 const ZOOMS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const THUMB_SCALE = 0.16;
+/**
+ * react-rnd begins dragging on the first pixel of movement, so aiming at a box
+ * and twitching moved it. A gesture smaller than this, in PDF points, was
+ * meant as a click.
+ */
+const DRAG_SLOP = 2;
 
 type Tool = "select" | "text" | "highlight" | "image";
 
@@ -169,6 +175,14 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       edits: s.edits.map((e) => (e.id === id ? ({ ...e, ...patch } as PdfEdit) : e)),
     }));
 
+  /**
+   * Force a re-render so a controlled Rnd returns to its stored position after
+   * a drag we chose to ignore. Deliberately not `mutate`: a click that changed
+   * nothing should not mark the document dirty.
+   */
+  const snapBack = (id: string) =>
+    setState((s) => ({ ...s, edits: s.edits.map((e) => (e.id === id ? { ...e } : e)) }));
+
   const deleteEdit = (id: string) => {
     mutate((s) => ({ ...s, edits: s.edits.filter((e) => e.id !== id) }));
     setSelectedId(null);
@@ -226,13 +240,13 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       italic: span.italic,
       baseline: span.baseline,
       family: span.family,
+      replaces: { x: span.x, baseline: span.baseline, width: span.w },
     };
     // Add both at once so the cover always sits under its replacement.
     mutate((s) => ({ ...s, edits: [...s.edits, rect, textEdit] }));
     setSelectedId(textEdit.id);
     setEditingId(textEdit.id);
     setTool("select");
-    setWarnRedaction(true);
   };
 
   /** Click on empty canvas with a tool active: create the corresponding edit. */
@@ -354,7 +368,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     if (!originalRef.current) return;
     setBusy("Generando PDF…");
     try {
-      const blob = await savePdf(originalRef.current, state);
+      const { blob, coveredOnly } = await savePdf(originalRef.current, state);
       const outName = withExt(name, ".pdf");
 
       if (sourceIdRef.current == null) {
@@ -371,6 +385,10 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
 
       savedNameRef.current = outName;
       setName(outName);
+      // Only warn about what actually stayed behind. Saying the original text
+      // survives when it was cut out would be as wrong as staying quiet when
+      // it wasn't.
+      setWarnRedaction(coveredOnly > 0);
       setDirty(false);
       notifyChange();
     } catch (err) {
@@ -582,8 +600,8 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       {warnRedaction && (
         <div className={styles.warnBar}>
           <span>
-            ⚠ El texto original queda <b>oculto pero no borrado</b>: sigue dentro del PDF y se puede
-            extraer. No uses esto para tachar datos sensibles.
+            ⚠ Parte del texto que reemplazaste <b>no se pudo quitar</b> del PDF: quedó tapado, pero
+            sigue adentro y se puede extraer. No confíes en esto para tachar datos sensibles.
           </span>
           <button className={styles.warnClose} onClick={() => setWarnRedaction(false)}>
             ✕
@@ -666,17 +684,21 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
                   style={{ zIndex: selectedId === edit.id ? 20 : 10 }}
                   disableDragging={editingId === edit.id}
                   enableResizing={editingId !== edit.id}
-                  onDragStop={(_e, d) =>
+                  onDragStop={(_e, d) => {
+                    const nx = Math.round(d.x);
+                    const ny = Math.round(d.y);
+                    if (Math.abs(nx - edit.x) < DRAG_SLOP && Math.abs(ny - edit.y) < DRAG_SLOP) {
+                      snapBack(edit.id);
+                      return;
+                    }
                     updateEdit(edit.id, {
-                      x: Math.round(d.x),
-                      y: Math.round(d.y),
+                      x: nx,
+                      y: ny,
                       // Carry the baseline along, or dragged text would snap
                       // back to where it was originally anchored.
-                      ...(edit.kind === "text"
-                        ? { baseline: edit.baseline + (Math.round(d.y) - edit.y) }
-                        : {}),
-                    })
-                  }
+                      ...(edit.kind === "text" ? { baseline: edit.baseline + (ny - edit.y) } : {}),
+                    });
+                  }}
                   onResizeStop={(_e, _dir, ref, _delta, pos) =>
                     updateEdit(edit.id, {
                       x: Math.round(pos.x),
