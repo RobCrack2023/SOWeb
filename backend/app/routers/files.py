@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,9 @@ from ..schemas import (
 router = APIRouter(prefix="/api", tags=["files"])
 
 STORAGE_DIR = settings.STORAGE_DIR
+
+# Sent with anything that serves a file's own bytes. See download_file for why.
+NO_STORE = {"Cache-Control": "no-store"}
 
 
 def _now() -> datetime:
@@ -257,9 +260,11 @@ def create_text_file(
 @router.get("/files/{file_id}/content", response_model=FileContentOut)
 def get_file_content(
     file_id: int,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    response.headers.update(NO_STORE)
     entry = _get_file_or_404(db, file_id, user)
     blob = STORAGE_DIR / entry.storage_path
     # Binary files (uploaded Office documents) are fetched via /download instead;
@@ -368,7 +373,17 @@ def download_file(
     blob = STORAGE_DIR / entry.storage_path
     if not blob.exists():
         raise HTTPException(status_code=404, detail="File blob missing")
-    return FileResponse(blob, filename=entry.name, media_type=entry.content_type or "application/octet-stream")
+    return FileResponse(
+        blob,
+        filename=entry.name,
+        media_type=entry.content_type or "application/octet-stream",
+        # Never cache: file ids are SQLite rowids, so emptying the trash frees
+        # them and the next upload can land on a URL the browser already has a
+        # body for — it would then show the deleted file instead of the new one.
+        # Someone else's documents have no business in a shared disk cache
+        # either.
+        headers=NO_STORE,
+    )
 
 
 @router.patch("/files/{file_id}", response_model=FileOut)
