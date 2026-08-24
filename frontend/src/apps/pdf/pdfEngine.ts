@@ -186,6 +186,62 @@ export function sampleBackground(
   return best;
 }
 
+/**
+ * Sample the colour of the glyphs in a text run. pdf.js hands back a span's
+ * position and font but not its colour, so a replacement copy has to read that
+ * back off the rendered page — otherwise every edit comes out black and stands
+ * out against headings that were never black to begin with.
+ */
+export function sampleInk(
+  canvas: HTMLCanvasElement,
+  box: { x: number; y: number; w: number; h: number },
+  scale: number,
+  background: Rgb,
+): Rgb {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const fallback: Rgb = { r: 0, g: 0, b: 0 };
+  if (!ctx) return fallback;
+
+  const x0 = Math.max(0, Math.round(box.x * scale));
+  const y0 = Math.max(0, Math.round(box.y * scale));
+  const x1 = Math.min(canvas.width, Math.round((box.x + box.w) * scale));
+  const y1 = Math.min(canvas.height, Math.round((box.y + box.h) * scale));
+  if (x1 <= x0 || y1 <= y0) return fallback;
+
+  const { data } = ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
+  const bgR = background.r * 255;
+  const bgG = background.g * 255;
+  const bgB = background.b * 255;
+  const distance = (i: number) =>
+    Math.abs(data[i] - bgR) + Math.abs(data[i + 1] - bgG) + Math.abs(data[i + 2] - bgB);
+
+  let farthest = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const d = distance(i);
+    if (d > farthest) farthest = d;
+  }
+  // Nothing in the box stands out from the page: no ink to read.
+  if (farthest < 30) return fallback;
+
+  // Antialiasing blends every glyph edge toward the background, so only the
+  // pixels furthest from it show the true colour. Averaging that group beats
+  // taking a single winner, which one stray pixel could decide.
+  const cutoff = farthest * 0.8;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (distance(i) < cutoff) continue;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    n += 1;
+  }
+  if (n === 0) return fallback;
+  return { r: r / n / 255, g: g / n / 255, b: b / n / 255 };
+}
+
 /** Rotation-aware conversion from on-screen point to unrotated page space. */
 export function viewToPage(
   vx: number,

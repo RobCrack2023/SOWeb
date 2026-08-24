@@ -18,6 +18,7 @@ import { CSS_FAMILY, baselineOffset } from "./textMetrics";
 import {
   loadPdf,
   sampleBackground,
+  sampleInk,
   savePdf,
   viewToPage,
   type LoadedPdf,
@@ -196,6 +197,11 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     const bg = pageCanvasRef.current
       ? sampleBackground(pageCanvasRef.current, cover, zoom)
       : WHITE;
+    // Read the colour off the glyphs themselves: replacing a word in a navy
+    // heading should not hand back a black one.
+    const ink = pageCanvasRef.current
+      ? sampleInk(pageCanvasRef.current, span, zoom, bg)
+      : BLACK;
 
     const rect = {
       id: uid("r"),
@@ -215,7 +221,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       h: span.h,
       text: span.str,
       fontSize: span.fontSize,
-      color: BLACK,
+      color: ink,
       bold: span.bold,
       italic: span.italic,
       baseline: span.baseline,
