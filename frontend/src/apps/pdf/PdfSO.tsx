@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import {
-  createTextFile,
-  deleteFile,
   fetchFileBytes,
   getDesktopId,
   getFileContent,
   renameFile,
-  updateFileContent,
+  replaceFileBinary,
   uploadBlob,
   type ImportRequest,
 } from "../../lib/filesApi";
@@ -75,9 +73,10 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const pageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalRef = useRef<ArrayBuffer | null>(null);
   const desktopIdRef = useRef<number | null>(null);
-  const sidecarIdRef = useRef<number | undefined>(fileId);
-  /** The PDF we exported ourselves, replaced on every re-save. */
-  const exportedIdRef = useRef<number | null>(null);
+  /** The PDF being edited; saving overwrites this file in place. */
+  const sourceIdRef = useRef<number | null>(null);
+  /** The name that file carries on disk, to know when a rename is due. */
+  const savedNameRef = useRef<string | null>(null);
 
   const visiblePages = useMemo(() => state.pages.filter((p) => !p.deleted), [state.pages]);
   const page = visiblePages[Math.min(current, Math.max(0, visiblePages.length - 1))];
@@ -93,18 +92,16 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     if (windowId) setTitle(windowId, `${dirty ? "● " : ""}${name} — pdfSO`);
   }, [windowId, name, dirty, setTitle]);
 
-  const openBytes = useCallback(async (bytes: ArrayBuffer, docName: string, saved?: PdfDocState) => {
+  const openBytes = useCallback(async (bytes: ArrayBuffer, docName: string) => {
     setBusy("Abriendo PDF…");
     try {
       originalRef.current = bytes;
       const loaded = await loadPdf(bytes);
       setPdf(loaded);
-      setState(
-        saved ?? {
-          pages: loaded.pages.map((p) => ({ sourceIndex: p.index, rotation: 0, deleted: false })),
-          edits: [],
-        },
-      );
+      setState({
+        pages: loaded.pages.map((p) => ({ sourceIndex: p.index, rotation: 0, deleted: false })),
+        edits: [],
+      });
       setName(docName);
       setCurrent(0);
       setDirty(false);
@@ -119,21 +116,28 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   useEffect(() => {
     if (!importFrom) return;
     setFolderId(importFrom.folderId);
-    sidecarIdRef.current = undefined;
+    sourceIdRef.current = importFrom.id;
+    savedNameRef.current = importFrom.name;
     fetchFileBytes(importFrom.id).then((bytes) => openBytes(bytes, importFrom.name));
   }, [importFrom, openBytes]);
 
-  // Reopened as a pdfSO project (original bytes plus the saved edit list).
+  // A .pdfso project from before saving overwrote the original. pdfSO no longer
+  // creates these: the edits are already drawn into the PDF it points at, so it
+  // opens as a plain document and the stored edit list is dropped — replaying it
+  // would paint everything a second time.
   useEffect(() => {
     if (fileId == null) return;
     getFileContent(fileId).then(async (doc) => {
       setFolderId(doc.folder_id);
       try {
-        const sidecar = JSON.parse(doc.content) as { pdfFileId: number; state: PdfDocState };
+        const sidecar = JSON.parse(doc.content) as { pdfFileId: number };
         const bytes = await fetchFileBytes(sidecar.pdfFileId);
-        await openBytes(bytes, doc.name, sidecar.state);
+        const docName = withExt(doc.name, ".pdf");
+        sourceIdRef.current = sidecar.pdfFileId;
+        savedNameRef.current = docName;
+        await openBytes(bytes, docName);
       } catch {
-        window.alert("No se pudo restaurar el proyecto de pdfSO.");
+        window.alert("No se pudo abrir el proyecto de pdfSO.");
       }
     });
   }, [fileId, openBytes]);
@@ -172,7 +176,8 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const openLocal = async () => {
     const file = await pickLocalFile(".pdf");
     if (!file) return;
-    sidecarIdRef.current = undefined;
+    sourceIdRef.current = null;
+    savedNameRef.current = null;
     await openBytes(await file.arrayBuffer(), file.name);
     setDirty(true);
   };
@@ -331,34 +336,37 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     setCurrent((c) => Math.max(0, Math.min(visiblePages.length - 1, c + dir)));
   };
 
-  const exportPdf = async () => {
+  /**
+   * Writes the edited PDF over the file it was opened from. Uploading instead
+   * left the original untouched beside a second icon with the same name.
+   *
+   * The pristine bytes stay in `originalRef`, so saving twice in one session
+   * still redraws the whole edit list onto the original rather than stacking
+   * this save on top of the last one.
+   */
+  const save = async () => {
     if (!originalRef.current) return;
-    const target = folderId ?? desktopIdRef.current;
-    if (target == null) return;
     setBusy("Generando PDF…");
     try {
       const blob = await savePdf(originalRef.current, state);
       const outName = withExt(name, ".pdf");
-      const saved = await uploadBlob(target, outName, blob);
-      // Replace our own previous export so repeated saves don't pile up copies.
-      // Only ever removes a file pdfSO created, never the user's original.
-      if (exportedIdRef.current != null) {
-        await deleteFile(exportedIdRef.current).catch(() => {});
-      }
-      exportedIdRef.current = saved.id;
-      // Keep the edit list beside it so the document can be reopened editable.
-      const sidecar = JSON.stringify({ pdfFileId: saved.id, state });
-      const projectName = withExt(name, ".pdfso");
-      if (sidecarIdRef.current != null) {
-        await updateFileContent(sidecarIdRef.current, sidecar);
-        await renameFile(sidecarIdRef.current, projectName);
+
+      if (sourceIdRef.current == null) {
+        // Opened from the local disk: there is nothing here yet to overwrite.
+        const target = folderId ?? desktopIdRef.current;
+        if (target == null) return;
+        const created = await uploadBlob(target, outName, blob);
+        sourceIdRef.current = created.id;
       } else {
-        const created = await createTextFile(projectName, target, sidecar, "application/x-soweb-pdf");
-        sidecarIdRef.current = created.id;
+        await replaceFileBinary(sourceIdRef.current, outName, blob);
+        // The name box is editable, so the file may need to follow along.
+        if (savedNameRef.current !== outName) await renameFile(sourceIdRef.current, outName);
       }
+
+      savedNameRef.current = outName;
+      setName(outName);
       setDirty(false);
       notifyChange();
-      window.alert(`Guardado como ${outName}`);
     } catch (err) {
       window.alert(`No se pudo guardar: ${err}`);
     } finally {
@@ -369,7 +377,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
       e.preventDefault();
-      exportPdf();
+      save();
       return;
     }
     const el = e.target as HTMLElement;
@@ -417,7 +425,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
         <button className={styles.toolBtn} onClick={openLocal} disabled={!!busy}>
           📂 Abrir
         </button>
-        <button className={styles.primaryBtn} onClick={exportPdf} disabled={!!busy || !dirty}>
+        <button className={styles.primaryBtn} onClick={save} disabled={!!busy || !dirty}>
           {busy ? "…" : dirty ? "💾 Guardar PDF" : "✓ Guardado"}
         </button>
       </div>
