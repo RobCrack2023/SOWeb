@@ -1,96 +1,313 @@
+/*
+ * Pantalla de acceso.
+ *
+ * El fondo es el propio escritorio de SOWeb fuera de foco: tres marcos de
+ * ventana flotando en profundidad, desenfocados hasta quedar en atmósfera.
+ * Nada de esto es una imagen — son cajas y degradados, así que no hay archivos
+ * que descargar ni peso extra en un VPS chico.
+ */
+
 .screen {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100vw;
   height: 100vh;
-  background: linear-gradient(160deg, #1e3c72 0%, #2a5298 45%, #274d7a 100%);
+  overflow: hidden;
+  /* Los mismos azules del escritorio, para que el salto no se note. */
+  background:
+    radial-gradient(120% 90% at 78% 12%, #2f6fed33 0%, transparent 55%),
+    radial-gradient(90% 80% at 12% 88%, #4c8bf52e 0%, transparent 60%),
+    linear-gradient(158deg, #0d1b3a 0%, #16305f 46%, #1e3c72 100%);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #eaf1ff;
 }
+
+.wallpaper {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Cada "pane" es una ventana insinuada: borde claro arriba a la izquierda,
+   relleno translúcido, y el desenfoque justo para reconocerla sin leerla. */
+.pane {
+  position: absolute;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.05) 62%);
+  filter: blur(22px);
+  will-change: transform;
+}
+
+.paneA {
+  width: 46vw;
+  height: 32vw;
+  min-width: 420px;
+  min-height: 290px;
+  left: -6vw;
+  top: 8vh;
+  transform: rotate(-9deg);
+  opacity: 0.2;
+  animation: driftA 74s ease-in-out infinite;
+}
+
+.paneB {
+  width: 38vw;
+  height: 26vw;
+  min-width: 340px;
+  min-height: 240px;
+  right: -4vw;
+  bottom: 4vh;
+  transform: rotate(7deg);
+  opacity: 0.16;
+  animation: driftB 92s ease-in-out infinite;
+}
+
+.paneC {
+  width: 24vw;
+  height: 17vw;
+  min-width: 230px;
+  min-height: 160px;
+  right: 16vw;
+  top: -5vh;
+  transform: rotate(-4deg);
+  opacity: 0.12;
+  animation: driftA 108s ease-in-out infinite reverse;
+}
+
+/* Movimiento apenas perceptible: atmósfera, no animación. */
+@keyframes driftA {
+  0%, 100% { transform: rotate(-9deg) translate3d(0, 0, 0); }
+  50%      { transform: rotate(-7.5deg) translate3d(2.2vw, -1.6vh, 0); }
+}
+
+@keyframes driftB {
+  0%, 100% { transform: rotate(7deg) translate3d(0, 0, 0); }
+  50%      { transform: rotate(5.5deg) translate3d(-2vw, 1.4vh, 0); }
+}
+
+/* Grano fino: quita el bandeado de los degradados y da textura. */
+.grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- Reloj, arriba a la izquierda, como en la pantalla de bloqueo --- */
+
+.clock {
+  position: absolute;
+  top: clamp(24px, 5vh, 56px);
+  left: clamp(24px, 5vw, 64px);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.4);
+  user-select: none;
+}
+
+.time {
+  font-size: clamp(44px, 7vw, 76px);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.date {
+  margin-top: 6px;
+  font-size: clamp(14px, 1.5vw, 19px);
+  font-weight: 300;
+  color: #eaf1ffcc;
+  /* El navegador devuelve el día en minúscula; en español así corresponde. */
+  text-transform: lowercase;
+}
+
+/* --- La tarjeta de vidrio --- */
 
 .card {
+  position: relative;
+  display: flex;
+  width: min(400px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  /* Sin transición de `width`: entre dos min() con unidades de viewport la
+     interpolación se traba y la tarjeta queda en el ancho de partida. Animar
+     el ancho además recalcula la maquetación en cada cuadro. El movimiento lo
+     aporta el panel, que entra con su propio desvanecido. */
+  animation: rise 0.5s cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+/* Al registrarse, la tarjeta se abre para dar lugar a la explicación. */
+.cardWide {
+  width: min(860px, calc(100vw - 40px));
+}
+
+@keyframes rise {
+  from { transform: translateY(14px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  width: 340px;
-  padding: 32px 28px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 12px;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 380px;
+  min-width: 0;
+  padding: 34px 30px 28px;
+  overflow-y: auto;
 }
 
-.brand {
-  text-align: center;
-  margin-bottom: 4px;
+/* --- Identidad --- */
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.1));
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-.logo {
-  font-size: 40px;
+.mark {
+  width: 34px;
+  height: 34px;
+  fill: #ffffff;
+  opacity: 0.94;
 }
 
-.title {
-  margin: 6px 0 2px;
-  font-size: 24px;
-  font-weight: 600;
-  color: #fff;
+/* "SO" pesado y "Web" liviano: el mismo sufijo que comparten writeSO,
+   spreadSO, mailSO y el resto de las apps. */
+.wordmark {
+  margin: 4px 0 0;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.wordmarkSo {
+  font-weight: 700;
+}
+
+.wordmarkWeb {
+  font-weight: 200;
+  opacity: 0.92;
 }
 
 .subtitle {
-  margin: 0;
+  margin: 0 0 6px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.75);
+  font-weight: 300;
+  color: #eaf1ffb8;
+  text-align: center;
 }
+
+/* --- Campos --- */
 
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.labelText {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.85);
+  position: relative;
+  display: block;
+  width: 100%;
 }
 
 .input {
-  padding: 9px 11px;
+  width: 100%;
+  padding: 11px 14px;
+  font: inherit;
   font-size: 14px;
-  color: #1a1a1a;
-  background: rgba(255, 255, 255, 0.92);
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.9);
   border: 1px solid transparent;
   border-radius: 6px;
   outline: none;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input::placeholder {
+  color: #55607a;
 }
 
 .input:focus {
-  border-color: #4cc2ff;
-  box-shadow: 0 0 0 3px rgba(76, 194, 255, 0.3);
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(76, 139, 245, 0.55);
 }
 
 .input:disabled {
   opacity: 0.7;
 }
 
-.error {
-  padding: 8px 10px;
-  font-size: 12.5px;
-  color: #ffdcdc;
-  background: rgba(200, 40, 40, 0.35);
-  border: 1px solid rgba(255, 120, 120, 0.5);
-  border-radius: 6px;
+.fieldSubmit .input {
+  padding-right: 46px;
+}
+
+/* La flecha dentro del campo de contraseña, como en el login de Windows. */
+.go {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: #1e3c72;
+  background: rgba(30, 60, 114, 0.1);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.go:hover:not(:disabled) {
+  background: #2f6fed;
+  color: #ffffff;
+}
+
+.go:disabled {
+  cursor: default;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(30, 60, 114, 0.25);
+  border-top-color: #1e3c72;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .submit {
+  width: 100%;
   margin-top: 4px;
-  padding: 10px;
+  padding: 11px;
+  font: inherit;
   font-size: 14px;
   font-weight: 600;
-  color: #fff;
+  color: #ffffff;
   background: #2f6fed;
   border: none;
   border-radius: 6px;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 .submit:hover:not(:disabled) {
@@ -102,19 +319,171 @@
   cursor: default;
 }
 
-.switch {
-  text-align: center;
+.error {
+  width: 100%;
+  padding: 9px 11px;
   font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+  color: #ffe0dc;
+  background: rgba(200, 45, 45, 0.34);
+  border: 1px solid rgba(255, 140, 140, 0.45);
+  border-radius: 6px;
+}
+
+.switch {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: #eaf1ffb8;
+  text-align: center;
 }
 
 .link {
   padding: 0;
+  font: inherit;
   font-size: 12.5px;
   font-weight: 600;
-  color: #9fd4ff;
+  color: #a9c9ff;
   background: none;
   border: none;
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: #ffffff;
+}
+
+/* --- Panel explicativo (solo al registrarse) --- */
+
+.about {
+  flex: 1 1 440px;
+  min-width: 0;
+  padding: 34px 30px;
+  overflow-y: auto;
+  background: rgba(9, 22, 51, 0.34);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  animation: fadeIn 0.4s ease-out 0.08s backwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.aboutTitle {
+  margin: 0 0 8px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.aboutLead {
+  margin: 0 0 20px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #eaf1ffcc;
+}
+
+.aboutList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.aboutItem {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.aboutIcon {
+  flex-shrink: 0;
+  width: 26px;
+  font-size: 17px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.aboutItemTitle {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 1px;
+}
+
+.aboutItemBody {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #eaf1ffab;
+}
+
+.aboutFoot {
+  margin: 20px 0 0;
+  padding-top: 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #eaf1ff8f;
+  border-top: 1px solid rgba(255, 255, 255, 0.13);
+}
+
+/* --- Accesibilidad --- */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.input:focus-visible,
+.go:focus-visible,
+.submit:focus-visible,
+.link:focus-visible {
+  outline: 2px solid #a9c9ff;
+  outline-offset: 2px;
+}
+
+/* --- Pantallas angostas --- */
+
+@media (max-width: 760px) {
+  .card,
+  .cardWide {
+    width: calc(100vw - 28px);
+    flex-direction: column;
+  }
+
+  .about {
+    flex: 0 0 auto;
+    padding: 24px 22px 20px;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  .panel {
+    padding: 24px 22px 22px;
+  }
+
+  /* El reloj compite con la tarjeta cuando hay poco alto. */
+  .clock {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane,
+  .card,
+  .about,
+  .spinner {
+    animation: none;
+  }
 }
