@@ -70,6 +70,14 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const [tool, setTool] = useState<Tool>("select");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  /**
+   * A line just picked with "Editar texto original". The cover-and-replace
+   * pair is already on the page, but it is not an edit yet: it only becomes
+   * one if the text ends up different from what the PDF said.
+   */
+  const [pending, setPending] = useState<
+    { textId: string; rectId: string; original: string } | null
+  >(null);
   const [spans, setSpans] = useState<TextSpan[]>([]);
   const [showSpans, setShowSpans] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,6 +86,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const [warnRedaction, setWarnRedaction] = useState(false);
 
   const pageCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
   const originalRef = useRef<ArrayBuffer | null>(null);
   const desktopIdRef = useRef<number | null>(null);
   /** The PDF being edited; saving overwrites this file in place. */
@@ -111,6 +120,7 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       });
       setName(docName);
       setCurrent(0);
+      setPending(null);
       setDirty(false);
     } catch (err) {
       window.alert(`No se pudo abrir el PDF: ${err}`);
@@ -159,6 +169,15 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     };
   }, [pdf, page]);
 
+  /**
+   * `autoFocus` only fires on mount. When editing moves from one box to
+   * another without unmounting the textarea, this puts the keyboard back
+   * inside it — the difference between typing on the PDF and scrolling it.
+   */
+  useEffect(() => {
+    if (editingId) textAreaRef.current?.focus();
+  }, [editingId]);
+
   const mutate = (fn: (s: PdfDocState) => PdfDocState) => {
     setState(fn);
     setDirty(true);
@@ -176,6 +195,40 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     }));
 
   /**
+   * Typing inside a replacement that hasn't been confirmed applies the text
+   * without marking the document dirty — `resolvePending` decides that. Any
+   * other box still counts as changed on the keystroke, the way it always did.
+   */
+  const editText = (id: string, text: string) => {
+    const apply = (s: PdfDocState): PdfDocState => ({
+      ...s,
+      edits: s.edits.map((e) => (e.id === id ? ({ ...e, text } as PdfEdit) : e)),
+    });
+    if (pending?.textId === id) setState(apply);
+    else mutate(apply);
+  };
+
+  /**
+   * Settles a provisional replacement. If the text came out identical to the
+   * original there was no edit: the cover and the copy go away and the
+   * document stays clean. Picking a line cannot light up "Guardar PDF" alone.
+   */
+  const resolvePending = () => {
+    if (!pending) return;
+    const edit = state.edits.find((e) => e.id === pending.textId);
+    setPending(null);
+    if (edit && edit.kind === "text" && edit.text !== pending.original) {
+      setDirty(true);
+      return;
+    }
+    setState((s) => ({
+      ...s,
+      edits: s.edits.filter((e) => e.id !== pending.textId && e.id !== pending.rectId),
+    }));
+    setSelectedId((id) => (id === pending.textId ? null : id));
+  };
+
+  /**
    * Force a re-render so a controlled Rnd returns to its stored position after
    * a drag we chose to ignore. Deliberately not `mutate`: a click that changed
    * nothing should not mark the document dirty.
@@ -184,7 +237,11 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
     setState((s) => ({ ...s, edits: s.edits.map((e) => (e.id === id ? { ...e } : e)) }));
 
   const deleteEdit = (id: string) => {
-    mutate((s) => ({ ...s, edits: s.edits.filter((e) => e.id !== id) }));
+    // Dropping an unconfirmed replacement takes its cover along, or a white
+    // patch would stay behind hiding the text it was meant to keep.
+    const also = pending?.textId === id ? pending.rectId : null;
+    if (pending?.textId === id) setPending(null);
+    mutate((s) => ({ ...s, edits: s.edits.filter((e) => e.id !== id && e.id !== also) }));
     setSelectedId(null);
   };
 
@@ -242,8 +299,13 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       family: span.family,
       replaces: { x: span.x, baseline: span.baseline, width: span.w },
     };
+    // Picking another line settles the previous one: untouched, it goes away.
+    resolvePending();
     // Add both at once so the cover always sits under its replacement.
-    mutate((s) => ({ ...s, edits: [...s.edits, rect, textEdit] }));
+    // `setState`, not `mutate`: so far there is no edit, only a line picked.
+    // The document turns dirty when a change is confirmed, not before.
+    setState((s) => ({ ...s, edits: [...s.edits, rect, textEdit] }));
+    setPending({ textId: textEdit.id, rectId: rect.id, original: span.str });
     setSelectedId(textEdit.id);
     setEditingId(textEdit.id);
     setTool("select");
@@ -433,6 +495,10 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
   const viewW = (rotated ? pageSize!.height : pageSize!.width) * zoom;
   const viewH = (rotated ? pageSize!.width : pageSize!.height) * zoom;
   const pageEdits = state.edits.filter((e) => e.page === page!.sourceIndex);
+  // A picked-but-unconfirmed line is drawn on the page, but it is not an edit.
+  const committedEdits = pageEdits.filter(
+    (e) => e.id !== pending?.textId && e.id !== pending?.rectId,
+  );
 
   return (
     <div className={styles.app} onKeyDown={onKeyDown}>
@@ -666,6 +732,12 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
                       title={`Reemplazar: ${s.str}`}
                       onMouseDown={(e) => {
                         e.stopPropagation();
+                        // Without this, the mousedown default action moves
+                        // focus onto the span's div — which cannot hold it —
+                        // and takes it away from the textarea we just
+                        // mounted. The box fell back to a read-only div and
+                        // the keys escaped to the viewer, scrolling it.
+                        e.preventDefault();
                         replaceSpan(s);
                       }}
                     />
@@ -744,13 +816,29 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
                       return editingId === edit.id ? (
                         <textarea
                           className={styles.textArea}
+                          ref={textAreaRef}
                           autoFocus
                           value={edit.text}
                           style={textStyle}
-                          onChange={(ev) => updateEdit(edit.id, { text: ev.target.value })}
-                          onBlur={() => setEditingId(null)}
+                          onChange={(ev) => editText(edit.id, ev.target.value)}
+                          onBlur={() => {
+                            setEditingId(null);
+                            resolvePending();
+                          }}
                           onKeyDown={(ev) => {
-                            if (ev.key === "Escape") setEditingId(null);
+                            if (ev.key === "Escape") {
+                              setEditingId(null);
+                              resolvePending();
+                            }
+                            // Enter confirms a replaced PDF run, which is a
+                            // single line by definition. In a text box of our
+                            // own it still breaks the line, and Shift+Enter
+                            // breaks it in both.
+                            if (ev.key === "Enter" && !ev.shiftKey && pending?.textId === edit.id) {
+                              ev.preventDefault();
+                              setEditingId(null);
+                              resolvePending();
+                            }
                             ev.stopPropagation();
                           }}
                         />
@@ -774,7 +862,8 @@ export function PdfSO({ windowId, fileId, folderId: initialFolderId, importFrom 
       </div>
 
       <div className={styles.statusBar}>
-        Página {current + 1} de {visiblePages.length} · {pageEdits.length} edición(es) en esta página
+        Página {current + 1} de {visiblePages.length} · {committedEdits.length} edición(es) en
+        esta página
       </div>
     </div>
   );
