@@ -52,6 +52,7 @@ const WHAT_YOU_GET = [
 export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [invite, setInvite] = useState("");
@@ -79,8 +80,15 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
     setError(null);
 
     const name = username.trim();
+    const mail = email.trim().toLowerCase();
     if (name.length < 3) {
       setError("El usuario debe tener al menos 3 caracteres.");
+      return;
+    }
+    // Misma forma laxa que valida el servidor: acá solo evita el viaje de ida
+    // y vuelta por un correo que ni siquiera tiene arroba.
+    if (isRegister && !/^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/.test(mail)) {
+      setError("Escribí un correo válido.");
       return;
     }
     if (password.length < 6) {
@@ -99,7 +107,7 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
     setBusy(true);
     try {
       const user = isRegister
-        ? await register(name, password, invite.trim())
+        ? await register(name, password, mail, invite.trim())
         : await login(name, password);
       onAuthenticated(user);
     } catch (err) {
@@ -182,6 +190,21 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (user: User)
               disabled={busy}
             />
           </label>
+
+          {isRegister && (
+            <label className={styles.field}>
+              <span className={styles.srOnly}>Correo</span>
+              <input
+                className={styles.input}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Correo"
+                autoComplete="email"
+                disabled={busy}
+              />
+            </label>
+          )}
 
           {/* Password carries the submit arrow, the way Windows does it. */}
           <label className={`${styles.field} ${styles.fieldSubmit}`}>

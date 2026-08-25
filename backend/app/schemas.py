@@ -10,6 +10,16 @@ class Credentials(BaseModel):
     invite: str = Field(default="", max_length=128)
 
 
+class Registration(Credentials):
+    """Signing up asks for one thing more than signing in.
+
+    Kept apart from Credentials so the extra field is required where it
+    matters and absent where it doesn't: login has no business carrying it.
+    """
+
+    email: str = Field(min_length=3, max_length=255)
+
+
 class AuthInfo(BaseModel):
     """What the login screen needs before anyone types anything."""
 
@@ -333,6 +343,8 @@ class AdminOverview(BaseModel):
 class AdminUser(BaseModel):
     id: int
     username: str
+    # Empty for accounts created before it was asked for.
+    email: str | None
     is_admin: bool
     created_at: datetime
     online: bool

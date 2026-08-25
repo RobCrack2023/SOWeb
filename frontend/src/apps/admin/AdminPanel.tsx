@@ -146,6 +146,7 @@ export function AdminPanel() {
               <tr>
                 <th></th>
                 <th>Usuario</th>
+                <th>Correo</th>
                 <th>Rol</th>
                 <th className={styles.num}>Archivos</th>
                 <th className={styles.num}>Carpetas</th>
@@ -166,6 +167,7 @@ export function AdminPanel() {
                       <span className={u.online ? styles.dotOn : styles.dotOff} />
                     </td>
                     <td>{u.username}</td>
+                    <td>{u.email ?? "-"}</td>
                     <td>{u.is_admin ? "admin" : "usuario"}</td>
                     <td className={styles.num}>{u.files}</td>
                     <td className={styles.num}>{u.folders}</td>
@@ -175,7 +177,7 @@ export function AdminPanel() {
                   </tr>
                   {expanded === u.id && (
                     <tr>
-                      <td colSpan={8} className={styles.nested}>
+                      <td colSpan={9} className={styles.nested}>
                         {userFiles.length === 0 ? (
                           <div className={styles.empty}>Sin archivos.</div>
                         ) : (

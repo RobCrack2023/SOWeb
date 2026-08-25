@@ -15,6 +15,12 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # Único: es lo que impide que la misma persona junte varias cuentas con
+    # distintos nombres. Admite nulo porque las cuentas creadas antes de que
+    # esto existiera no tienen correo, y no hay ninguno que inventarles.
+    email: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True, nullable=True
+    )
     password_hash: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session as DbSession
 
+import re
 import secrets
 import time
 
@@ -9,7 +10,7 @@ from .. import activity, settings
 from ..auth import create_session, get_current_user, hash_password, verify_password
 from ..database import get_db
 from ..models import Folder, Session, User
-from ..schemas import AuthInfo, Credentials, LoginOut, PasswordChange, UserOut
+from ..schemas import AuthInfo, Credentials, LoginOut, PasswordChange, Registration, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -19,6 +20,24 @@ _bearer = HTTPBearer(auto_error=False)
 # which suits the single-worker deployment; several workers would each keep
 # their own tally.
 _failures: dict[str, tuple[int, float]] = {}
+
+
+# Deliberadamente permisiva: alcanza con que haya un solo @, nada de espacios
+# y un dominio con punto. Las reglas reales de un correo válido son mucho más
+# raras que esto, y una expresión estricta termina rechazando direcciones que
+# funcionan. Lo que valida de verdad que el correo existe es escribirle.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
+
+
+def _normalise_email(raw: str) -> str | None:
+    """La dirección en la forma en que se guarda, o None si no parece una.
+
+    Se guarda en minúsculas y sin espacios alrededor para que la unicidad
+    signifique algo: si no, `Ana@Gmail.com` y `ana@gmail.com` entrarían como
+    dos cuentas distintas, que es justo lo que esto viene a impedir.
+    """
+    email = raw.strip().lower()
+    return email if _EMAIL_RE.match(email) else None
 
 
 def _locked_out(username: str) -> int:
@@ -62,22 +81,32 @@ def _adopt_legacy_content(db: DbSession, user: User) -> None:
 
 
 @router.post("/register", response_model=LoginOut, status_code=201)
-def register(payload: Credentials, db: DbSession = Depends(get_db)):
+def register(payload: Registration, db: DbSession = Depends(get_db)):
     username = payload.username.strip()
+    email = _normalise_email(payload.email)
     # A private instance is gated by a code the owner sets; comparison is
     # constant-time so the code can't be guessed a character at a time.
     if settings.INVITE_CODE and not secrets.compare_digest(
         payload.invite.strip(), settings.INVITE_CODE
     ):
         raise HTTPException(status_code=403, detail="El código de invitación no es válido")
+    if email is None:
+        raise HTTPException(status_code=400, detail="Ese correo no parece válido")
     if db.query(User).filter(User.username == username).first() is not None:
         raise HTTPException(status_code=409, detail="Ese usuario ya existe")
+    # El correo es lo que ata una persona a una sola cuenta: el nombre de
+    # usuario se puede variar, la casilla no tanto. Decir que ya está tomado
+    # revela que existe, igual que ya lo hace el nombre de usuario acá arriba;
+    # sin eso no habría forma de explicarle a alguien por qué no puede entrar.
+    if db.query(User).filter(User.email == email).first() is not None:
+        raise HTTPException(status_code=409, detail="Ya hay una cuenta con ese correo")
 
     # The first account runs the place: it inherits the pre-auth files and gets
     # the admin panel. Later accounts are ordinary users.
     is_first_user = db.query(User).count() == 0
     user = User(
         username=username,
+        email=email,
         password_hash=hash_password(payload.password),
         is_admin=is_first_user,
     )

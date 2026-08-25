@@ -35,7 +35,7 @@ def ensure_schema() -> None:
                 {"pos_x": "INTEGER", "pos_y": "INTEGER", "owner_id": "INTEGER", "deleted_at": "DATETIME"},
             ),
             ("files", {"pos_x": "INTEGER", "pos_y": "INTEGER", "deleted_at": "DATETIME"}),
-            ("users", {"is_admin": "BOOLEAN DEFAULT 0"}),
+            ("users", {"is_admin": "BOOLEAN DEFAULT 0", "email": "VARCHAR(255)"}),
             ("sessions", {"last_seen": "DATETIME"}),
         ):
             if table not in inspector.get_table_names():
@@ -44,3 +44,13 @@ def ensure_schema() -> None:
             for col, col_type in columns.items():
                 if col not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+
+        # La unicidad del correo va como índice y no como restricción de la
+        # tabla: SQLite no permite agregar una con ALTER TABLE, y es también
+        # lo que create_all() emite para esa columna, así que la base nueva y
+        # la ya existente terminan con el mismo esquema. Varios NULL no chocan
+        # entre sí, que es lo que deja convivir a las cuentas sin correo.
+        if "users" in inspector.get_table_names():
+            conn.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)")
+            )

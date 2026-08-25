@@ -21,9 +21,12 @@ def cmd_list() -> int:
             print("No hay usuarios registrados todavía.")
             return 0
         width = max(len(u.username) for u in users)
+        # Las cuentas creadas antes de que se pidiera correo no tienen ninguno.
+        mail_width = max(len(u.email or "-") for u in users)
         for user in users:
             role = "admin" if user.is_admin else "usuario"
-            print(f"{user.username.ljust(width)}  {role}")
+            email = (user.email or "-").ljust(mail_width)
+            print(f"{user.username.ljust(width)}  {email}  {role}")
     return 0
 
 

@@ -50,16 +50,11 @@ export async function authInfo(): Promise<{ invite_required: boolean }> {
   return { invite_required: false };
 }
 
-async function submit(
-  path: string,
-  username: string,
-  password: string,
-  invite = "",
-): Promise<User> {
+async function submit(path: string, fields: Record<string, string>): Promise<User> {
   const res = await fetch(`${API_BASE}/auth${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password, invite }),
+    body: JSON.stringify(fields),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new Error(body?.detail ?? "No se pudo completar la operación");
@@ -69,10 +64,15 @@ async function submit(
   return data.user;
 }
 
-export const register = (username: string, password: string, invite = "") =>
-  submit("/register", username, password, invite);
+export const register = (
+  username: string,
+  password: string,
+  email: string,
+  invite = "",
+) => submit("/register", { username, password, email, invite });
 
-export const login = (username: string, password: string) => submit("/login", username, password);
+export const login = (username: string, password: string) =>
+  submit("/login", { username, password });
 
 export async function logout(): Promise<void> {
   // Revoke server-side, but drop the local token regardless of the outcome.

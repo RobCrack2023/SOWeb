@@ -93,6 +93,7 @@ def list_users(db: DbSession = Depends(get_db)):
             AdminUser(
                 id=user.id,
                 username=user.username,
+                email=user.email,
                 is_admin=user.is_admin,
                 created_at=user.created_at,
                 online=_is_online(last_seen),

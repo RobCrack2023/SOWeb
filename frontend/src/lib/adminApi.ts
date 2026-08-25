@@ -14,6 +14,7 @@ export interface AdminOverview {
 export interface AdminUser {
   id: number;
   username: string;
+  email: string | null;
   is_admin: boolean;
   created_at: string;
   online: boolean;
