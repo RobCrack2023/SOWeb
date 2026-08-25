@@ -464,14 +464,22 @@
     flex-direction: column;
   }
 
+  /* Apilada, la explicación va primero y no puede quedarse con todo el alto:
+     si no cede, al formulario le queda una rendija y el botón de crear la
+     cuenta cae fuera de la vista. Se recorta a un tercio de la pantalla y
+     desplaza su propio texto — ya trae overflow-y. */
   .about {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    max-height: 36vh;
+    min-height: 0;
     padding: 24px 22px 20px;
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   }
 
   .panel {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: 24px 22px 22px;
   }
 
